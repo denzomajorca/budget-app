@@ -17,7 +17,7 @@ export interface PlanItem {
     category_id: number | null;
     category: string | null;
     amount: number;
-    every_months: number | null;
+    frequency_key: string | null;
     frequency: string | null;
     next_due: string | null;
     is_estimate: boolean;
@@ -47,7 +47,7 @@ const form = useForm({
     name: '',
     category_id: null as number | null,
     amount: '',
-    every_months: 1 as number,
+    frequency: '1m',
     next_due: today(),
     is_estimate: false,
     saved: '',
@@ -63,7 +63,7 @@ watch(open, (o) => {
     form.name = i?.name ?? '';
     form.category_id = i?.category_id ?? null;
     form.amount = i ? centsToInput(i.amount) : '';
-    form.every_months = i?.every_months ?? 1;
+    form.frequency = i?.frequency_key ?? '1m';
     form.next_due = i?.next_due ?? today();
     form.is_estimate = i?.is_estimate ?? false;
     form.saved = i && i.saved ? centsToInput(i.saved) : '';
@@ -129,8 +129,8 @@ function destroy() {
                     </div>
                     <div v-if="form.group === 'bill'" class="grid gap-2">
                         <Label for="p-freq">How often</Label>
-                        <NativeSelect id="p-freq" v-model="form.every_months">
-                            <option v-for="(l, k) in frequencies" :key="k" :value="Number(k)">{{ l }}</option>
+                        <NativeSelect id="p-freq" v-model="form.frequency">
+                            <option v-for="(l, k) in frequencies" :key="k" :value="k">{{ l }}</option>
                         </NativeSelect>
                     </div>
                     <div v-if="form.group === 'goal'" class="grid gap-2">
