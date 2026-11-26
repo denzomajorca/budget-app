@@ -5,6 +5,7 @@ use App\Http\Controllers\BudgetController;
 use App\Http\Controllers\CategoryController;
 use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\ImportController;
+use App\Http\Controllers\PlanController;
 use App\Http\Controllers\SetupController;
 use App\Http\Controllers\SpendingController;
 use App\Http\Controllers\TransactionController;
@@ -25,6 +26,10 @@ Route::middleware('auth')->group(function () {
     Route::get('budgets', [BudgetController::class, 'index'])->name('budgets.index');
     Route::put('budgets', [BudgetController::class, 'update'])->name('budgets.update');
     Route::post('budgets/fill', [BudgetController::class, 'fillFromAverages'])->name('budgets.fill');
+    Route::get('plan', [PlanController::class, 'index'])->name('plan.index');
+    Route::post('plan', [PlanController::class, 'store'])->name('plan.store');
+    Route::put('plan/{item}', [PlanController::class, 'update'])->name('plan.update');
+    Route::delete('plan/{item}', [PlanController::class, 'destroy'])->name('plan.destroy');
     Route::get('import', [ImportController::class, 'index'])->name('imports.index');
     Route::post('import/preview', [ImportController::class, 'preview'])->name('imports.preview');
     Route::post('import', [ImportController::class, 'store'])->name('imports.store');

@@ -23,7 +23,7 @@ defineProps<{
 
     <AppLayout :breadcrumbs="breadcrumbs">
         <div class="mx-auto flex w-full max-w-6xl flex-1 flex-col gap-4 p-4">
-            <div class="grid gap-4 md:grid-cols-3">
+            <div class="grid grid-cols-1 gap-4 md:grid-cols-3 [&>*]:min-w-0">
                 <Card>
                     <CardHeader class="pb-2">
                         <CardDescription>Net worth</CardDescription>
