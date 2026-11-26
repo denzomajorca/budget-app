@@ -195,7 +195,11 @@ function stack(m: Month) {
                     <p v-if="!bills.length" class="px-6 pb-6 text-sm text-muted-foreground">No bills yet.</p>
                     <ul v-else class="divide-y border-t">
                         <li v-for="b in bills" :key="b.id">
-                            <button type="button" class="flex w-full min-w-0 items-center gap-3 px-6 py-3 text-left hover:bg-muted/40" @click="edit(b)">
+                            <button
+                                type="button"
+                                class="flex w-full min-w-0 items-center gap-3 px-6 py-3 text-left hover:bg-muted/40"
+                                @click="edit(b)"
+                            >
                                 <div class="min-w-0 flex-1">
                                     <div class="truncate font-medium">
                                         {{ b.name }}
@@ -241,7 +245,11 @@ function stack(m: Month) {
                     <p v-if="!flex.length" class="px-6 pb-6 text-sm text-muted-foreground">Nothing here yet.</p>
                     <ul v-else class="divide-y border-t">
                         <li v-for="f in flex" :key="f.id">
-                            <button type="button" class="flex w-full min-w-0 items-center gap-3 px-6 py-3 text-left hover:bg-muted/40" @click="edit(f)">
+                            <button
+                                type="button"
+                                class="flex w-full min-w-0 items-center gap-3 px-6 py-3 text-left hover:bg-muted/40"
+                                @click="edit(f)"
+                            >
                                 <div class="min-w-0 flex-1">
                                     <div class="truncate font-medium">{{ f.name }}</div>
                                     <div v-if="f.category" class="truncate text-sm text-muted-foreground">{{ f.category }}</div>
