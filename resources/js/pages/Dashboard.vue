@@ -11,6 +11,7 @@ const breadcrumbs: BreadcrumbItem[] = [{ title: 'Dashboard', href: '/dashboard' 
 defineProps<{
     accounts: { id: number; name: string; type_label: string; balance: number }[];
     netWorth: number;
+    budget: { budgeted: number; spent: number; over: { name: string; over: number }[] };
     spentThisMonth: number;
     monthStart: string;
     recentTransactions: { id: number; date: string; payee: string; amount: number; account: string | null; category: string | null }[];
@@ -48,8 +49,27 @@ defineProps<{
                 <Card>
                     <CardHeader class="pb-2">
                         <CardDescription>This month's budget</CardDescription>
-                        <CardTitle class="text-base font-normal text-muted-foreground">Coming in step 4</CardTitle>
+                        <CardTitle v-if="budget.budgeted" class="text-2xl tabular-nums">
+                            {{ money(budget.spent) }} <span class="text-base font-normal text-muted-foreground">of {{ money(budget.budgeted) }}</span>
+                        </CardTitle>
+                        <CardTitle v-else class="text-base font-normal text-muted-foreground">No budgets yet</CardTitle>
                     </CardHeader>
+                    <CardContent class="grid gap-2 text-sm">
+                        <div v-if="budget.budgeted" class="h-1.5 overflow-hidden rounded-full bg-muted">
+                            <div
+                                class="h-full rounded-full"
+                                :class="budget.spent > budget.budgeted ? 'bg-red-500' : 'bg-emerald-600'"
+                                :style="{ width: Math.min(100, Math.round((budget.spent / budget.budgeted) * 100)) + '%' }"
+                            />
+                        </div>
+                        <div v-for="o in budget.over" :key="o.name" class="flex justify-between gap-2 text-red-600 dark:text-red-400">
+                            <span class="truncate">{{ o.name }}</span
+                            ><span class="tabular-nums">{{ money(o.over) }} over</span>
+                        </div>
+                        <Link :href="route('budgets.index')" class="text-muted-foreground underline-offset-4 hover:underline">{{
+                            budget.budgeted ? 'See budgets' : 'Set up budgets'
+                        }}</Link>
+                    </CardContent>
                 </Card>
             </div>
 

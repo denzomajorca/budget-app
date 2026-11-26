@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Controllers\AccountController;
+use App\Http\Controllers\BudgetController;
 use App\Http\Controllers\CategoryController;
 use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\ImportController;
@@ -19,6 +20,9 @@ Route::middleware('auth')->group(function () {
     Route::resource('categories', CategoryController::class)->only(['index', 'store', 'update', 'destroy']);
     Route::resource('transactions', TransactionController::class)->only(['index', 'store', 'update', 'destroy']);
     Route::post('accounts/{account}/balance', [AccountController::class, 'setBalance'])->name('accounts.balance');
+    Route::get('budgets', [BudgetController::class, 'index'])->name('budgets.index');
+    Route::put('budgets', [BudgetController::class, 'update'])->name('budgets.update');
+    Route::post('budgets/fill', [BudgetController::class, 'fillFromAverages'])->name('budgets.fill');
     Route::get('import', [ImportController::class, 'index'])->name('imports.index');
     Route::post('import/preview', [ImportController::class, 'preview'])->name('imports.preview');
     Route::post('import', [ImportController::class, 'store'])->name('imports.store');
