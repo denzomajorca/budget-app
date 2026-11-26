@@ -1,0 +1,76 @@
+name: release
+
+# Builds a ready-to-upload zip for shared cPanel hosting (no SSH, no Node or
+# Composer needed on the server). Push a tag like v0.1.0, or run it by hand
+# from the Actions tab; the zip appears on the Releases page (tags) or as a
+# workflow artifact (manual runs).
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  package:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.2'
+          tools: composer:v2
+          coverage: none
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+
+      - name: Install PHP dependencies (production only)
+        run: composer install --no-dev --no-interaction --prefer-dist --optimize-autoloader --no-scripts
+
+      - name: Discover packages
+        run: |
+          cp .env.example .env
+          php artisan key:generate
+          php artisan package:discover
+          rm .env
+
+      - name: Build frontend
+        run: |
+          npm ci
+          npm run build
+
+      - name: Create zip
+        run: |
+          NAME="budget-app-${GITHUB_REF_NAME//\//-}"
+          echo "NAME=$NAME" >> "$GITHUB_ENV"
+          rm -rf node_modules tests storage/logs/*.log database/database.sqlite
+          zip -qr "/tmp/$NAME.zip" . \
+            -x '.git/*' '.github/*' '.env' '.env.*' \
+            -x 'resources/js/*' 'resources/css/*' \
+            -x '*.sqlite' 'phpunit.xml' '.phpunit*' 'vendor/*/*/.git/*'
+          # keep the env template in the package
+          zip -q "/tmp/$NAME.zip" .env.example deploy/env.knownhost
+          ls -lh "/tmp/$NAME.zip"
+
+      - name: Upload workflow artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ env.NAME }}
+          path: /tmp/${{ env.NAME }}.zip
+
+      - name: Publish release
+        if: startsWith(github.ref, 'refs/tags/')
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release create "$GITHUB_REF_NAME" "/tmp/$NAME.zip" --title "$GITHUB_REF_NAME" --generate-notes
