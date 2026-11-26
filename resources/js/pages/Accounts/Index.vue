@@ -7,7 +7,7 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import AppLayout from '@/layouts/AppLayout.vue';
-import { centsToInput, money } from '@/lib/money';
+import { centsToInput, money, today } from '@/lib/money';
 import { Head, Link, router, useForm } from '@inertiajs/vue3';
 import { Plus } from 'lucide-vue-next';
 import { computed, ref } from 'vue';
@@ -56,12 +56,19 @@ function startEdit(a: Account) {
     form.opening_date = a.opening_date ?? '';
     form.is_archived = a.is_archived;
     confirmDelete.value = false;
+    bal.reset();
+    bal.clearErrors();
     open.value = true;
 }
 function save() {
     const opts = { preserveScroll: true, onSuccess: () => (open.value = false) };
     if (editing.value) form.put(route('accounts.update', editing.value.id), opts);
     else form.post(route('accounts.store'), opts);
+}
+const bal = useForm({ balance: '', as_of: today() });
+function setBalance() {
+    if (!editing.value) return;
+    bal.post(route('accounts.balance', editing.value.id), { preserveScroll: true, onSuccess: () => (open.value = false) });
 }
 function destroy() {
     if (!editing.value) return;
@@ -190,6 +197,24 @@ function destroy() {
                         <input v-model="form.is_archived" type="checkbox" class="size-4 rounded border-input" />
                         Closed or hidden (kept for history, left out of totals)
                     </label>
+                </form>
+                <form v-if="editing && editing.transactions_count" class="grid gap-2 rounded-md border p-3" @submit.prevent="setBalance">
+                    <div class="text-sm font-medium">Match your bank's balance</div>
+                    <p class="text-xs text-muted-foreground">
+                        Now {{ money(editing.balance) }}. Type what your bank shows and for which date; the starting balance is worked out for you.
+                    </p>
+                    <div class="grid gap-2 sm:grid-cols-[1fr_1fr_auto]">
+                        <Input
+                            v-model="bal.balance"
+                            inputmode="decimal"
+                            :placeholder="editing.is_debt ? 'Amount owed' : 'Balance'"
+                            aria-label="Bank balance"
+                            required
+                        />
+                        <Input v-model="bal.as_of" type="date" aria-label="On this date" required />
+                        <Button type="submit" variant="outline" :disabled="bal.processing">Set</Button>
+                    </div>
+                    <InputError :message="bal.errors.balance || bal.errors.as_of" />
                 </form>
                 <div
                     v-if="editing && confirmDelete"

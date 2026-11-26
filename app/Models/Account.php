@@ -21,7 +21,7 @@ class Account extends Model
         'other' => 'Other',
     ];
 
-    protected $fillable = ['name', 'type', 'institution', 'opening_balance', 'opening_date', 'is_archived'];
+    protected $fillable = ['name', 'type', 'institution', 'opening_balance', 'opening_date', 'is_archived', 'import_settings'];
 
     protected function casts(): array
     {
@@ -29,6 +29,7 @@ class Account extends Model
             'opening_balance' => 'integer',
             'opening_date' => 'date:Y-m-d',
             'is_archived' => 'boolean',
+            'import_settings' => 'array',
         ];
     }
 

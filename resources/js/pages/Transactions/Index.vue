@@ -21,6 +21,7 @@ interface Filters {
     from: string | null;
     to: string | null;
     q: string | null;
+    import: string | number | null;
 }
 
 const props = defineProps<{
@@ -43,6 +44,7 @@ const f = reactive({
     from: props.filters.from ?? '',
     to: props.filters.to ?? '',
     q: props.filters.q ?? '',
+    import: props.filters.import ? String(props.filters.import) : '',
 });
 const hasFilters = computed(() => Object.values(f).some((v) => v !== ''));
 
@@ -52,7 +54,7 @@ function apply() {
 }
 const applySearch = useDebounceFn(apply, 350);
 function clear() {
-    Object.assign(f, { account: '', category: '', from: '', to: '', q: '' });
+    Object.assign(f, { account: '', category: '', from: '', to: '', q: '', import: '' });
     apply();
 }
 
@@ -102,6 +104,10 @@ const pageLinks = computed(() => props.transactions.links.map((l) => ({ ...l, la
                 </CardContent>
             </Card>
 
+            <p v-if="f.import" class="text-sm">
+                Showing one import only.
+                <button type="button" class="underline" @click="((f.import = ''), apply())">Show all</button>
+            </p>
             <p class="text-sm text-muted-foreground">
                 {{ totals.count }} {{ totals.count === 1 ? 'transaction' : 'transactions'
                 }}<template v-if="totals.count">

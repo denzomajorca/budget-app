@@ -24,6 +24,7 @@ class TransactionController extends Controller
             'from' => ['nullable', 'date_format:Y-m-d'],
             'to' => ['nullable', 'date_format:Y-m-d'],
             'q' => ['nullable', 'string', 'max:100'],
+            'import' => ['nullable', 'integer'],
         ]);
 
         $query = $this->filtered($filters);
@@ -47,7 +48,7 @@ class TransactionController extends Controller
         return Inertia::render('Transactions/Index', [
             'transactions' => $page,
             'totals' => ['in' => (int) $totals->money_in, 'out' => (int) $totals->money_out, 'count' => (int) $totals->n],
-            'filters' => array_merge(['account' => null, 'category' => null, 'from' => null, 'to' => null, 'q' => null], $filters),
+            'filters' => array_merge(['account' => null, 'category' => null, 'from' => null, 'to' => null, 'q' => null, 'import' => null], $filters),
             'accounts' => Account::orderBy('is_archived')->orderBy('name')->get(['id', 'name', 'is_archived']),
             'categories' => Category::options(),
         ]);
@@ -86,6 +87,7 @@ class TransactionController extends Controller
 
                 return $category ? $q->whereIn('category_id', $category->idsWithChildren()) : $q->whereRaw('1 = 0');
             })
+            ->when($f['import'] ?? null, fn ($q, $id) => $q->where('import_id', $id))
             ->when($f['from'] ?? null, fn ($q, $d) => $q->whereDate('date', '>=', $d))
             ->when($f['to'] ?? null, fn ($q, $d) => $q->whereDate('date', '<=', $d))
             ->when($f['q'] ?? null, function ($q, $s) {

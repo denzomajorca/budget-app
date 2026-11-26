@@ -10,7 +10,7 @@ class Transaction extends Model
 {
     use HasFactory;
 
-    protected $fillable = ['account_id', 'date', 'payee', 'amount', 'category_id', 'memo'];
+    protected $fillable = ['account_id', 'date', 'payee', 'amount', 'category_id', 'memo', 'import_id'];
 
     protected function casts(): array
     {
