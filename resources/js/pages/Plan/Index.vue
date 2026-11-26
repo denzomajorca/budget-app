@@ -216,7 +216,7 @@ function stack(m: Month) {
                                 </div>
                                 <div class="text-right">
                                     <div class="font-medium tabular-nums">{{ money(b.amount) }}</div>
-                                    <div v-if="b.every_months !== 1" class="text-xs tabular-nums text-muted-foreground">
+                                    <div v-if="b.frequency_key !== '1m'" class="text-xs tabular-nums text-muted-foreground">
                                         {{ money(b.per_month) }}/mo
                                     </div>
                                 </div>
