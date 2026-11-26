@@ -6,6 +6,7 @@ use App\Http\Controllers\CategoryController;
 use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\ImportController;
 use App\Http\Controllers\SetupController;
+use App\Http\Controllers\SpendingController;
 use App\Http\Controllers\TransactionController;
 use Illuminate\Support\Facades\Route;
 
@@ -20,6 +21,7 @@ Route::middleware('auth')->group(function () {
     Route::resource('categories', CategoryController::class)->only(['index', 'store', 'update', 'destroy']);
     Route::resource('transactions', TransactionController::class)->only(['index', 'store', 'update', 'destroy']);
     Route::post('accounts/{account}/balance', [AccountController::class, 'setBalance'])->name('accounts.balance');
+    Route::get('spending', SpendingController::class)->name('spending');
     Route::get('budgets', [BudgetController::class, 'index'])->name('budgets.index');
     Route::put('budgets', [BudgetController::class, 'update'])->name('budgets.update');
     Route::post('budgets/fill', [BudgetController::class, 'fillFromAverages'])->name('budgets.fill');
