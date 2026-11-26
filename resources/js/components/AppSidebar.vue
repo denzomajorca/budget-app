@@ -4,7 +4,7 @@ import NavUser from '@/components/NavUser.vue';
 import { Sidebar, SidebarContent, SidebarFooter, SidebarHeader, SidebarMenu, SidebarMenuButton, SidebarMenuItem } from '@/components/ui/sidebar';
 import { type NavItem } from '@/types';
 import { Link } from '@inertiajs/vue3';
-import { ArrowLeftRight, BarChart3, FileUp, Landmark, LayoutGrid, PiggyBank, Tags } from 'lucide-vue-next';
+import { ArrowLeftRight, BarChart3, CalendarClock, FileUp, Landmark, LayoutGrid, PiggyBank, Tags } from 'lucide-vue-next';
 import AppLogo from './AppLogo.vue';
 
 const mainNavItems: NavItem[] = [
@@ -17,6 +17,7 @@ const mainNavItems: NavItem[] = [
     { title: 'Transactions', href: '/transactions', icon: ArrowLeftRight },
     { title: 'Budgets', href: '/budgets', icon: PiggyBank },
     { title: 'Spending', href: '/spending', icon: BarChart3 },
+    { title: 'Expense plan', href: '/plan', icon: CalendarClock },
     { title: 'Import', href: '/import', icon: FileUp },
     { title: 'Categories', href: '/categories', icon: Tags },
 ];
