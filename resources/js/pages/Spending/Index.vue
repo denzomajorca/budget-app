@@ -87,7 +87,12 @@ function change(a: number, b: number): { text: string; pct: string; cls: string 
                             {{ l }}
                         </button>
                     </div>
-                    <NativeSelect :model-value="period" aria-label="Period" class="w-auto min-w-40" @update:model-value="(v) => go({ key: String(v) })">
+                    <NativeSelect
+                        :model-value="period"
+                        aria-label="Period"
+                        class="w-auto min-w-40"
+                        @update:model-value="(v) => go({ key: String(v) })"
+                    >
                         <option v-for="p in periods" :key="p.key" :value="p.key">{{ p.label }}</option>
                     </NativeSelect>
                     <label class="flex items-center gap-2 text-sm text-muted-foreground">
