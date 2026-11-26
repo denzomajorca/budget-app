@@ -1,14 +1,19 @@
 <script setup lang="ts">
+import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import AppLayout from '@/layouts/AppLayout.vue';
+import { money, shortDate } from '@/lib/money';
 import { type BreadcrumbItem } from '@/types';
-import { Head } from '@inertiajs/vue3';
+import { Head, Link } from '@inertiajs/vue3';
 
 const breadcrumbs: BreadcrumbItem[] = [{ title: 'Dashboard', href: '/dashboard' }];
 
 defineProps<{
-    accounts: unknown[];
-    recentTransactions: unknown[];
+    accounts: { id: number; name: string; type_label: string; balance: number }[];
+    netWorth: number;
+    spentThisMonth: number;
+    monthStart: string;
+    recentTransactions: { id: number; date: string; payee: string; amount: number; account: string | null; category: string | null }[];
 }>();
 </script>
 
@@ -16,39 +21,88 @@ defineProps<{
     <Head title="Dashboard" />
 
     <AppLayout :breadcrumbs="breadcrumbs">
-        <div class="flex h-full flex-1 flex-col gap-4 p-4">
+        <div class="mx-auto flex w-full max-w-6xl flex-1 flex-col gap-4 p-4">
             <div class="grid gap-4 md:grid-cols-3">
                 <Card>
-                    <CardHeader>
-                        <CardTitle>Accounts</CardTitle>
-                        <CardDescription>Balances across checking, savings and cards</CardDescription>
+                    <CardHeader class="pb-2">
+                        <CardDescription>Net worth</CardDescription>
+                        <CardTitle class="text-2xl tabular-nums">{{ money(netWorth) }}</CardTitle>
                     </CardHeader>
-                    <CardContent class="text-sm text-muted-foreground">No accounts yet.</CardContent>
+                    <CardContent class="text-sm text-muted-foreground"
+                        >What you have minus what you owe, across {{ accounts.length }} accounts.</CardContent
+                    >
                 </Card>
                 <Card>
-                    <CardHeader>
-                        <CardTitle>This month's budget</CardTitle>
-                        <CardDescription>Spent compared with budgeted, by category</CardDescription>
+                    <CardHeader class="pb-2">
+                        <CardDescription>Spent this month</CardDescription>
+                        <CardTitle class="text-2xl tabular-nums">{{ money(spentThisMonth) }}</CardTitle>
                     </CardHeader>
-                    <CardContent class="text-sm text-muted-foreground">No budget set up yet.</CardContent>
+                    <CardContent class="text-sm">
+                        <Link
+                            :href="route('transactions.index', { from: monthStart })"
+                            class="text-muted-foreground underline-offset-4 hover:underline"
+                            >See this month's transactions</Link
+                        >
+                    </CardContent>
                 </Card>
                 <Card>
-                    <CardHeader>
-                        <CardTitle>Net worth</CardTitle>
-                        <CardDescription>Assets minus debts</CardDescription>
+                    <CardHeader class="pb-2">
+                        <CardDescription>This month's budget</CardDescription>
+                        <CardTitle class="text-base font-normal text-muted-foreground">Coming in step 4</CardTitle>
                     </CardHeader>
-                    <CardContent class="text-sm text-muted-foreground">Appears once accounts are added.</CardContent>
                 </Card>
             </div>
-            <Card class="flex-1">
-                <CardHeader>
-                    <CardTitle>Recent transactions</CardTitle>
-                    <CardDescription>The latest activity from all accounts</CardDescription>
-                </CardHeader>
-                <CardContent class="text-sm text-muted-foreground">
-                    Nothing here yet. Importing CSV and Excel files from your bank is coming in step 3.
-                </CardContent>
-            </Card>
+
+            <div class="grid gap-4 lg:grid-cols-[1fr_2fr]">
+                <Card>
+                    <CardHeader class="flex-row items-center justify-between space-y-0 pb-2">
+                        <CardTitle class="text-base">Accounts</CardTitle>
+                        <Link :href="route('accounts.index')" class="text-sm text-muted-foreground hover:underline">Manage</Link>
+                    </CardHeader>
+                    <CardContent>
+                        <p v-if="accounts.length === 0" class="text-sm text-muted-foreground">
+                            No accounts yet.
+                            <Button as-child variant="link" class="h-auto p-0"
+                                ><Link :href="route('accounts.index')">Add your first account</Link></Button
+                            >
+                        </p>
+                        <ul v-else class="divide-y">
+                            <li v-for="a in accounts" :key="a.id" class="flex items-center justify-between gap-3 py-2 text-sm">
+                                <Link :href="route('transactions.index', { account: a.id })" class="min-w-0 truncate hover:underline">{{
+                                    a.name
+                                }}</Link>
+                                <span class="tabular-nums" :class="a.balance < 0 ? 'text-red-600 dark:text-red-400' : ''">{{
+                                    money(a.balance)
+                                }}</span>
+                            </li>
+                        </ul>
+                    </CardContent>
+                </Card>
+                <Card>
+                    <CardHeader class="flex-row items-center justify-between space-y-0 pb-2">
+                        <CardTitle class="text-base">Recent transactions</CardTitle>
+                        <Link :href="route('transactions.index')" class="text-sm text-muted-foreground hover:underline">All</Link>
+                    </CardHeader>
+                    <CardContent>
+                        <p v-if="recentTransactions.length === 0" class="text-sm text-muted-foreground">
+                            Nothing here yet. Importing bank files comes in step 3.
+                        </p>
+                        <ul v-else class="divide-y">
+                            <li v-for="t in recentTransactions" :key="t.id" class="flex items-center justify-between gap-3 py-2 text-sm">
+                                <div class="min-w-0">
+                                    <div class="truncate font-medium">{{ t.payee }}</div>
+                                    <div class="truncate text-xs text-muted-foreground">
+                                        {{ shortDate(t.date) }} · {{ t.category ?? 'Uncategorized' }}
+                                    </div>
+                                </div>
+                                <span class="tabular-nums" :class="t.amount > 0 ? 'text-emerald-700 dark:text-emerald-400' : ''">{{
+                                    money(t.amount)
+                                }}</span>
+                            </li>
+                        </ul>
+                    </CardContent>
+                </Card>
+            </div>
         </div>
     </AppLayout>
 </template>
