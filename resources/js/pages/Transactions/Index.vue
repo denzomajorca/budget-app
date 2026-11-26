@@ -46,6 +46,11 @@ const f = reactive({
     q: props.filters.q ?? '',
     import: props.filters.import ? String(props.filters.import) : '',
 });
+const onlyMain = computed(() => {
+    if (!f.category.startsWith('only-')) return '';
+    const id = Number(f.category.slice(5));
+    return props.categories.find((c) => c.id === id)?.label ?? 'Category';
+});
 const hasFilters = computed(() => Object.values(f).some((v) => v !== ''));
 
 function apply() {
@@ -90,6 +95,7 @@ const pageLinks = computed(() => props.transactions.links.map((l) => ({ ...l, la
                     <NativeSelect v-model="f.category" aria-label="Category" @change="apply">
                         <option value="">All categories</option>
                         <option value="none">Uncategorized</option>
+                        <option v-if="onlyMain" :value="f.category">{{ onlyMain }} (without subcategories)</option>
                         <option v-for="c in categories" :key="c.id" :value="String(c.id)">{{ c.parent_id ? ' ' : '' }}{{ c.label }}</option>
                     </NativeSelect>
                     <label class="relative block">

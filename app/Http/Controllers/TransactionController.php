@@ -83,6 +83,9 @@ class TransactionController extends Controller
                 if ($cat === 'none') {
                     return $q->whereNull('category_id');
                 }
+                if (str_starts_with($cat, 'only-')) {
+                    return $q->where('category_id', (int) substr($cat, 5)); // a main category without its subcategories
+                }
                 $category = Category::find((int) $cat);
 
                 return $category ? $q->whereIn('category_id', $category->idsWithChildren()) : $q->whereRaw('1 = 0');
