@@ -7,6 +7,7 @@ use App\Rules\MoneyAmount;
 use App\Support\Money;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Carbon;
 use Illuminate\Validation\Rule;
 use Inertia\Inertia;
 use Inertia\Response;
@@ -44,6 +45,31 @@ class AccountController extends Controller
         $account->delete();
 
         return back()->with('status', 'Account deleted.');
+    }
+
+    /**
+     * "My bank says the balance is X on this date": works out the starting
+     * balance so the running balance matches the bank.
+     */
+    public function setBalance(Request $request, Account $account): RedirectResponse
+    {
+        $data = $request->validate([
+            'balance' => ['required', new MoneyAmount],
+            'as_of' => ['required', 'date_format:Y-m-d'],
+        ]);
+        $target = Money::toCents((string) $data['balance']);
+        if ($account->isDebt()) {
+            $target = -abs($target);
+        }
+        $upTo = (int) $account->transactions()->whereDate('date', '<=', $data['as_of'])->sum('amount');
+        $first = $account->transactions()->min('date');
+
+        $account->update([
+            'opening_balance' => $target - $upTo,
+            'opening_date' => $first ? Carbon::parse($first)->subDay()->toDateString() : $data['as_of'],
+        ]);
+
+        return back()->with('status', 'Balance set.');
     }
 
     /** Shape sent to the pages. Balances are cents; debts are negative. */
