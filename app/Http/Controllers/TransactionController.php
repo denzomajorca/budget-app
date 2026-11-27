@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Models\Account;
 use App\Models\Category;
+use App\Models\PayeeRule;
 use App\Models\Transaction;
 use App\Rules\MoneyAmount;
 use App\Support\Money;
@@ -28,6 +29,7 @@ class TransactionController extends Controller
             'q' => ['nullable', 'string', 'max:100'],
             'import' => ['nullable', 'integer'],
             'transfers' => ['nullable', Rule::in(['unpaired'])],
+            'review' => ['nullable', Rule::in(['1'])],
         ]);
 
         $query = $this->filtered($filters);
@@ -46,6 +48,7 @@ class TransactionController extends Controller
                 'account' => $t->account?->name,
                 'category_id' => $t->category_id,
                 'category' => $t->category?->label(),
+                'needs_review' => $t->needs_review,
                 'is_transfer' => $t->category?->kind === 'transfer',
                 // "CHASE Checking → CHASE Savings", from where the money left to where it arrived.
                 'transfer' => $t->transfer ? ($t->amount < 0
@@ -56,7 +59,10 @@ class TransactionController extends Controller
         return Inertia::render('Transactions/Index', [
             'transactions' => $page,
             'totals' => ['in' => (int) $totals->money_in, 'out' => (int) $totals->money_out, 'count' => (int) $totals->n],
-            'filters' => array_merge(['account' => null, 'category' => null, 'from' => null, 'to' => null, 'q' => null, 'import' => null, 'transfers' => null], $filters),
+            'filters' => array_merge(['account' => null, 'category' => null, 'from' => null, 'to' => null, 'q' => null, 'import' => null, 'transfers' => null, 'review' => null], $filters),
+            'to_review' => Transaction::where('needs_review', true)->count(),
+            'uncategorized' => Transaction::whereNull('category_id')->count(),
+            'rules' => PayeeRule::with('category.parent')->orderBy('match')->get()->map(fn (PayeeRule $r) => ['id' => $r->id, 'match' => $r->match, 'category' => $r->category?->label()]),
             'unpaired_transfers' => Transfers::unpairedCount(),
             'accounts' => Account::orderBy('is_archived')->orderBy('name')->get(['id', 'name', 'is_archived']),
             'categories' => Category::options(),
@@ -82,11 +88,60 @@ class TransactionController extends Controller
                 Transaction::whereKey($transaction->transfer_id)->update(['transfer_id' => null]);
                 $data['transfer_id'] = null;
             }
-            $transaction->update($data);
+            $transaction->update($data + ['needs_review' => false]);
         });
         Transfers::pair();
 
         return back()->with('status', 'Transaction saved.');
+    }
+
+    /**
+     * Change many transactions at once: the ticked ones (`ids`), or every
+     * one that matches the current filters (`all`). Sets a category and/or
+     * marks them reviewed.
+     */
+    public function bulk(Request $request): RedirectResponse
+    {
+        $data = $request->validate([
+            'ids' => ['required_without:all', 'array', 'max:1000'],
+            'ids.*' => ['integer'],
+            'all' => ['nullable', 'boolean'],
+            'filters' => ['nullable', 'array'],
+            'action' => ['required', Rule::in(['category', 'reviewed'])],
+            'category_id' => ['nullable', 'integer', Rule::exists('categories', 'id')],
+        ]);
+
+        $query = ! empty($data['all'])
+            ? $this->filtered(array_intersect_key((array) ($data['filters'] ?? []), array_flip(['account', 'category', 'from', 'to', 'q', 'import', 'transfers', 'review'])))
+            : Transaction::whereIn('id', $data['ids']);
+        $ids = $query->pluck('id');
+
+        $n = DB::transaction(function () use ($ids, $data) {
+            $n = 0;
+            foreach ($ids->chunk(500) as $chunk) {
+                $q = Transaction::whereIn('id', $chunk);
+                if ($data['action'] === 'category') {
+                    $toTransfer = $data['category_id'] && Category::whereKey($data['category_id'])->where('kind', 'transfer')->exists();
+                    if (! $toTransfer) {
+                        // No longer a transfer, so let go of the other side too.
+                        Transaction::whereIn('transfer_id', $chunk)->update(['transfer_id' => null]);
+                        $q->update(['transfer_id' => null]);
+                    }
+                    $n += Transaction::whereIn('id', $chunk)->update(['category_id' => $data['category_id'], 'needs_review' => false]);
+                } else {
+                    $n += $q->update(['needs_review' => false]);
+                }
+            }
+
+            return $n;
+        });
+        if ($data['action'] === 'category') {
+            Transfers::pair();
+        }
+
+        $what = $n === 1 ? '1 transaction' : $n.' transactions';
+
+        return back()->with('status', $data['action'] === 'category' ? "Category set on {$what}." : "{$what} marked reviewed.");
     }
 
     public function destroy(Transaction $transaction): RedirectResponse
@@ -112,6 +167,7 @@ class TransactionController extends Controller
                 return $category ? $q->whereIn('category_id', $category->idsWithChildren()) : $q->whereRaw('1 = 0');
             })
             ->when(($f['transfers'] ?? null) === 'unpaired', fn ($q) => $q->whereNull('transfer_id')->whereHas('category', fn ($c) => $c->where('kind', 'transfer')))
+            ->when(($f['review'] ?? null) === '1', fn ($q) => $q->where('needs_review', true))
             ->when($f['import'] ?? null, fn ($q, $id) => $q->where('import_id', $id))
             ->when($f['from'] ?? null, fn ($q, $d) => $q->whereDate('date', '>=', $d))
             ->when($f['to'] ?? null, fn ($q, $d) => $q->whereDate('date', '<=', $d))

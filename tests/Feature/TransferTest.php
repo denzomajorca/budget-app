@@ -109,7 +109,7 @@ class TransferTest extends TestCase
         Transaction::create(['account_id' => $this->checking->id, 'date' => '2026-10-01', 'payee' => 'Pay card', 'amount' => -2500, 'category_id' => $sub->id]);
         Transaction::create(['account_id' => $this->card->id, 'date' => '2026-10-01', 'payee' => 'Payment', 'amount' => 2500]);
 
-        Artisan::call('migrate:rollback', ['--step' => 1]);
+        Artisan::call('migrate:rollback', ['--path' => 'database/migrations/2026_11_27_000008_add_transfer_id_to_transactions.php']);
         Artisan::call('migrate');
 
         $this->assertSame('transfer', $cc->fresh()->kind);

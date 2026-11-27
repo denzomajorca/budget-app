@@ -5,6 +5,7 @@ import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { groupByKind } from '@/lib/categories';
 import { centsToInput, money, today } from '@/lib/money';
 import { router, useForm } from '@inertiajs/vue3';
 import { computed, ref, watch } from 'vue';
@@ -105,7 +106,9 @@ function destroy() {
                     <Label for="p-cat">Category</Label>
                     <NativeSelect id="p-cat" v-model="form.category_id" @change="categoryPicked">
                         <option :value="null">None</option>
-                        <option v-for="c in categories" :key="c.id" :value="c.id">{{ c.parent_id ? ' ' : '' }}{{ c.label }}</option>
+                        <optgroup v-for="g in groupByKind(categories)" :key="g.kind" :label="g.title">
+                            <option v-for="c in g.options" :key="c.id" :value="c.id">{{ c.parent_id ? ' ' : '' }}{{ c.label }}</option>
+                        </optgroup>
                     </NativeSelect>
                     <p v-if="avg" class="text-xs text-muted-foreground">You've spent about {{ money(avg) }} a month on this lately.</p>
                 </div>
