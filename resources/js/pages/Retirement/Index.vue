@@ -156,7 +156,7 @@ const headline = computed(() => {
 const tone = computed(() =>
     !p.value ? '' : { on_track: 'text-emerald-700 dark:text-emerald-400', close: 'text-amber-600', short: 'text-red-600' }[p.value.status],
 );
-const lasts = (pr: Projection) => (pr.runs_out_at === null ? `past ${lastAge.value}` : `age ${pr.runs_out_at}`);
+const lasts = (pr: Projection) => (pr.runs_out_at === null ? `past ${lastAge.value}` : `to age ${pr.runs_out_at}`);
 
 const notes = computed(() => {
     const x = p.value;
