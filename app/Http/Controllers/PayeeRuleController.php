@@ -30,7 +30,7 @@ class PayeeRuleController extends Controller
             ->update(['category_id' => $data['category_id'], 'needs_review' => false]);
         Transfers::pair();
 
-        return back()->with('status', 'Rule saved. Future imports will use it'.($n ? '; '.$n.' more '.($n === 1 ? 'transaction' : 'transactions').' to review were filed too.' : '.'));
+        return back()->with('status', 'Rule saved. Future imports will use it'.($n ? ', and '.($n === 1 ? '1 more transaction' : $n.' more transactions').' waiting for review got the same category.' : '.'));
     }
 
     public function destroy(PayeeRule $payeeRule): RedirectResponse

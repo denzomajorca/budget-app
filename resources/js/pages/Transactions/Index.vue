@@ -271,7 +271,7 @@ const pageLinks = computed(() => props.transactions.links.map((l) => ({ ...l, la
             <template v-else>
                 <div v-if="selected.length" class="sticky top-2 z-10 flex flex-wrap items-center gap-2 rounded-lg border bg-background p-3 shadow-sm">
                     <span class="text-sm font-medium">{{ selected.length }} ticked</span>
-                    <NativeSelect v-model="bulkCategory" class="h-9 w-auto max-w-[16rem]" aria-label="Category for ticked rows">
+                    <NativeSelect v-model="bulkCategory" class="h-9 w-auto max-w-[16rem] py-0" aria-label="Category for ticked rows">
                         <option value="" disabled>Set category…</option>
                         <option value="none">Uncategorized</option>
                         <optgroup v-for="g in groupByKind(categories)" :key="g.kind" :label="g.title">
@@ -320,7 +320,7 @@ const pageLinks = computed(() => props.transactions.links.map((l) => ({ ...l, la
                                 </button>
                                 <div v-if="t.needs_review || !t.category_id" class="px-3 pb-3">
                                     <NativeSelect
-                                        class="h-9"
+                                        class="h-9 py-0"
                                         :model-value="t.category_id ? String(t.category_id) : ''"
                                         :aria-label="'Category for ' + t.payee"
                                         @change="quickSet(t, ($event.target as HTMLSelectElement).value)"
@@ -393,7 +393,7 @@ const pageLinks = computed(() => props.transactions.links.map((l) => ({ ...l, la
                                     <div v-if="t.transfer" class="text-muted-foreground" @click="edit(t)">{{ categoryText(t) }}</div>
                                     <NativeSelect
                                         v-else
-                                        class="h-8 border-transparent bg-transparent px-2 hover:border-input"
+                                        class="h-8 border-transparent bg-transparent px-2 py-0 hover:border-input"
                                         :class="t.category_id ? '' : 'text-muted-foreground'"
                                         :model-value="t.category_id ? String(t.category_id) : ''"
                                         :aria-label="'Category for ' + t.payee"
