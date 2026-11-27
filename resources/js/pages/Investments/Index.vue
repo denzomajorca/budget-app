@@ -894,7 +894,7 @@ const has401k = computed(() => flowIn.value.employee !== 0 || flowIn.value.emplo
                                         :title="c.name"
                                     />
                                 </div>
-                                <ul class="mt-3 grid gap-1 text-sm">
+                                <ul class="mt-3 grid grid-cols-1 gap-1 text-sm">
                                     <li v-for="(c, i) in holdings.combined" :key="i" class="flex items-center justify-between gap-3">
                                         <span class="flex min-w-0 items-center gap-2"
                                             ><span class="size-2.5 shrink-0 rounded-full" :class="colors[i % colors.length]" /><span

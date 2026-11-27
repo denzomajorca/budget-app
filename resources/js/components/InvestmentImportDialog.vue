@@ -171,7 +171,7 @@ function save() {
                             <b>{{ holdingRows.length }}</b> holdings worth <b>{{ money(holdingsTotal) }}</b
                             >. This also saves that total as the account’s balance on that date.
                         </p>
-                        <ul class="grid gap-1">
+                        <ul class="grid grid-cols-1 gap-1">
                             <li v-for="(r, i) in holdingRows.slice(0, 8)" :key="i" class="flex justify-between gap-3 border-t pt-1">
                                 <span class="min-w-0 truncate">{{ r.symbol ? r.symbol + ' · ' : '' }}{{ r.name }}</span>
                                 <span class="tabular-nums">{{ money(r.value) }}</span>
