@@ -19,6 +19,7 @@ interface Acct {
     name: string;
     kind: string;
     institution: string | null;
+    started_empty: boolean;
 }
 interface Row {
     id: number;
@@ -34,6 +35,7 @@ interface Row {
     return: number | null;
     annual: number | null;
     partial: boolean;
+    opened: boolean;
     needs: 'balance' | 'second_balance' | null;
 }
 interface Fund {
@@ -193,7 +195,7 @@ const xLabels = computed(() => {
 const acctOpen = ref(false);
 const acctEditing = ref<Acct | null>(null);
 const confirmDelete = ref(false);
-const acctForm = useForm({ name: '', kind: '401k', institution: '' });
+const acctForm = useForm({ name: '', kind: '401k', institution: '', started_empty: false });
 function addAccount(preset?: { name: string; kind: string; institution: string }) {
     acctEditing.value = null;
     confirmDelete.value = false;
@@ -201,6 +203,7 @@ function addAccount(preset?: { name: string; kind: string; institution: string }
     acctForm.name = preset?.name ?? '';
     acctForm.kind = preset?.kind ?? '401k';
     acctForm.institution = preset?.institution ?? '';
+    acctForm.started_empty = preset?.kind === 'brokerage';
     acctOpen.value = true;
 }
 function editAccount(a: Acct) {
@@ -210,6 +213,7 @@ function editAccount(a: Acct) {
     acctForm.name = a.name;
     acctForm.kind = a.kind;
     acctForm.institution = a.institution ?? '';
+    acctForm.started_empty = a.started_empty;
     acctOpen.value = true;
 }
 function saveAccount() {
@@ -506,7 +510,8 @@ const has401k = computed(() => flowIn.value.employee !== 0 || flowIn.value.emplo
                                             </template>
                                             <template v-else
                                                 >{{ shortDate(r.start_date!) }} to {{ shortDate(r.value_date!)
-                                                }}<template v-if="r.partial"> (your first balance)</template></template
+                                                }}<template v-if="r.opened"> (since it opened)</template
+                                                ><template v-else-if="r.partial"> (your first balance)</template></template
                                             >
                                         </div>
                                     </td>
@@ -913,6 +918,14 @@ const has401k = computed(() => flowIn.value.employee !== 0 || flowIn.value.emplo
                             <Input id="ia-inst" v-model="acctForm.institution" placeholder="Fidelity" />
                         </div>
                     </div>
+                    <label class="flex items-start gap-2 text-sm">
+                        <input v-model="acctForm.started_empty" type="checkbox" class="mt-0.5 size-4" />
+                        <span
+                            >It’s a new account that started at $0<span class="block text-xs text-muted-foreground"
+                                >Growth is then counted from your first deposit, without a starting statement.</span
+                            ></span
+                        >
+                    </label>
                 </form>
                 <div
                     v-if="acctEditing && confirmDelete"

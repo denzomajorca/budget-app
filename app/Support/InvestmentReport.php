@@ -4,6 +4,7 @@ namespace App\Support;
 
 use App\Models\InvestmentAccount;
 use App\Models\InvestmentActivity;
+use App\Models\InvestmentBalance;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Collection;
 
@@ -69,11 +70,26 @@ class InvestmentReport
             ->sum('amount');
     }
 
+    /**
+     * Saved balances, plus a $0 balance the day before the first money went
+     * in when the account started empty.
+     */
+    private function balancesOf(InvestmentAccount $a): Collection
+    {
+        $bal = $a->balances->sortBy('date')->values();
+        $firstFlow = $this->flows($a)->min('date');
+        if ($a->started_empty && $firstFlow && (! $bal->first() || $bal->first()->date->gt($firstFlow))) {
+            $bal->prepend(new InvestmentBalance(['date' => Carbon::parse($firstFlow)->subDay(), 'balance' => 0]));
+        }
+
+        return $bal->values();
+    }
+
     /** One account's growth over the timeframe. */
     public function account(InvestmentAccount $a): array
     {
-        $bal = $a->balances->sortBy('date')->values();
-        $last = $bal->last();
+        $bal = $this->balancesOf($a);
+        $last = $a->balances->isEmpty() ? null : $bal->last();
         $base = [
             'id' => $a->id,
             'name' => $a->name,
@@ -89,6 +105,7 @@ class InvestmentReport
             'return' => null,
             'annual' => null,
             'partial' => false,
+            'opened' => false,
             'needs' => $last ? null : 'balance',
         ];
         if (! $last) {
@@ -100,7 +117,7 @@ class InvestmentReport
             $start = $bal->first();
             $partial = (bool) $this->from;
         }
-        if ($start->id === $last->id) {
+        if ($start === $last) {
             return ['needs' => 'second_balance'] + $base;
         }
         $putIn = $this->flowBetween($a, $start->date, $last->date);
@@ -109,7 +126,8 @@ class InvestmentReport
             'start' => $start->balance,
             'start_date' => $start->date->toDateString(),
             'put_in' => $putIn,
-            'partial' => $partial,
+            'partial' => $partial && $start->exists,
+            'opened' => ! $start->exists,
         ]);
     }
 
@@ -153,7 +171,7 @@ class InvestmentReport
     /** Estimated value on a date: the last balance before it plus money added since. */
     private function valueOn(InvestmentAccount $a, Carbon $d): ?int
     {
-        $b = $a->balances->filter(fn ($x) => $x->date->lte($d))->sortBy('date')->last();
+        $b = $this->balancesOf($a)->filter(fn ($x) => $x->date->lte($d))->last();
 
         return $b ? $b->balance + $this->flowBetween($a, $b->date, $d) : null;
     }
@@ -164,7 +182,7 @@ class InvestmentReport
      */
     public function chart(): array
     {
-        $firsts = $this->accounts->map(fn ($a) => $a->balances->min('date'))->filter();
+        $firsts = $this->accounts->map(fn ($a) => $this->balancesOf($a)->min('date'))->filter();
         if ($firsts->isEmpty()) {
             return [];
         }
@@ -191,7 +209,7 @@ class InvestmentReport
             $v = $this->valueOn($a, $begin);
             if ($v !== null) {
                 $starts[$a->id] = [$begin, $v];
-            } elseif ($b = $a->balances->sortBy('date')->first()) {
+            } elseif ($b = $this->balancesOf($a)->first()) {
                 $starts[$a->id] = [$b->date, $b->balance];
             }
         }

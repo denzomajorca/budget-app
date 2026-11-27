@@ -16,6 +16,9 @@ return new class extends Migration
             $table->string('name', 100);
             $table->string('kind', 20); // 401k, ira, roth_ira, brokerage, hsa, other
             $table->string('institution', 100)->nullable();
+            // A new account that held nothing before its first deposit, so
+            // growth can be worked out from $0 without a starting statement.
+            $table->boolean('started_empty')->default(false);
             $table->timestamps();
         });
 

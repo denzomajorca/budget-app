@@ -173,4 +173,20 @@ class InvestmentTest extends TestCase
         $this->assertSame(0, InvestmentActivity::count());
         $this->assertSame(0, InvestmentBalance::count());
     }
+
+    public function test_new_account_grows_from_zero(): void
+    {
+        $f = InvestmentAccount::create(['name' => 'Fidelity', 'kind' => 'brokerage', 'started_empty' => true]);
+        InvestmentActivity::create(['investment_account_id' => $f->id, 'date' => '2026-11-20', 'kind' => 'deposit', 'description' => 'EFT', 'amount' => 10_000_00]);
+        InvestmentActivity::create(['investment_account_id' => $f->id, 'date' => '2026-11-21', 'kind' => 'buy', 'description' => 'YOU BOUGHT', 'amount' => -5_000_00]);
+        $p = $this->props();
+        $this->assertSame('balance', $p['rows'][0]['needs']);
+
+        InvestmentBalance::create(['investment_account_id' => $f->id, 'date' => '2026-11-27', 'balance' => 10_122_86]);
+        $row = $this->props()['rows'][0];
+        $this->assertTrue($row['opened']);
+        $this->assertSame(0, $row['start']);
+        $this->assertSame(10_000_00, $row['put_in']);
+        $this->assertSame(122_86, $row['gain']);
+    }
 }

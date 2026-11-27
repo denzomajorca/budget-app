@@ -36,7 +36,7 @@ class InvestmentController extends Controller
             'timeframe' => $report->timeframe(),
             'kinds' => InvestmentAccount::KINDS,
             'activityKinds' => array_map(fn ($k) => ['label' => $k[0], 'flow' => $k[1]], InvestmentActivity::KINDS),
-            'accounts' => $all->map(fn ($a) => ['id' => $a->id, 'name' => $a->name, 'kind' => $a->kind, 'institution' => $a->institution])->values(),
+            'accounts' => $all->map(fn ($a) => ['id' => $a->id, 'name' => $a->name, 'kind' => $a->kind, 'institution' => $a->institution, 'started_empty' => $a->started_empty])->values(),
             'rows' => $rows,
             'summary' => $report->summary($rows),
             'chart' => $report->chart(),
@@ -90,7 +90,8 @@ class InvestmentController extends Controller
             'name' => ['required', 'string', 'max:100'],
             'kind' => ['required', Rule::in(array_keys(InvestmentAccount::KINDS))],
             'institution' => ['nullable', 'string', 'max:100'],
-        ]);
+            'started_empty' => ['nullable', 'boolean'],
+        ]) + ['started_empty' => false];
     }
 
     public function storeBalance(Request $request): RedirectResponse
