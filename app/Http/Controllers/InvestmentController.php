@@ -11,9 +11,11 @@ use App\Models\InvestmentImport;
 use App\Rules\MoneyAmount;
 use App\Support\InvestmentReport;
 use App\Support\Money;
+use Illuminate\Database\QueryException;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
 use Inertia\Inertia;
 use Inertia\Response;
@@ -205,11 +207,21 @@ class InvestmentController extends Controller
             'rows.*.loan' => ['nullable', 'integer', 'between:0,99999999999'],
             'rows.*.money_in' => ['nullable', 'integer', 'between:-99999999999,99999999999'],
         ]);
-        if ($data['type'] === 'balances') {
-            return $this->importBalances($data);
-        }
+        try {
+            return match ($data['type']) {
+                'balances' => $this->importBalances($data),
+                'holdings' => $this->importHoldings($data),
+                default => $this->importActivity($data),
+            };
+        } catch (QueryException $e) {
+            report($e);
+            // Most often the database is behind the app after an update.
+            $behind = preg_match('/unknown column|no such (column|table)|doesn\'t exist|undefined column/i', $e->getMessage());
 
-        return $data['type'] === 'holdings' ? $this->importHoldings($data) : $this->importActivity($data);
+            return back()->withErrors(['rows' => $behind
+                ? 'The database needs updating first: open your setup link and click “Update database”, then import again.'
+                : 'The file could not be saved. Nothing was changed. ('.Str::limit($e->getMessage(), 160).')']);
+        }
     }
 
     private function importActivity(array $data): RedirectResponse
