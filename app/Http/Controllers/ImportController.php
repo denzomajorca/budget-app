@@ -7,6 +7,7 @@ use App\Models\Category;
 use App\Models\Import;
 use App\Models\Transaction;
 use App\Support\CategoryPath;
+use App\Support\Transfers;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -129,6 +130,7 @@ class ImportController extends Controller
 
             return $import;
         });
+        Transfers::pair();
 
         return redirect()->route('imports.index', ['done' => $import->id])
             ->with('status', $import->rows_imported.' transactions imported.');
@@ -138,6 +140,8 @@ class ImportController extends Controller
     public function destroy(Import $import): RedirectResponse
     {
         DB::transaction(function () use ($import) {
+            Transaction::whereIn('transfer_id', $import->transactions()->select('id'))->update(['transfer_id' => null]);
+            $import->transactions()->update(['transfer_id' => null]);
             $import->transactions()->delete();
             $import->delete();
         });
