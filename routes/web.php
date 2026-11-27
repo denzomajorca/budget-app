@@ -5,6 +5,7 @@ use App\Http\Controllers\BudgetController;
 use App\Http\Controllers\CategoryController;
 use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\ImportController;
+use App\Http\Controllers\PayeeRuleController;
 use App\Http\Controllers\PlanController;
 use App\Http\Controllers\SetupController;
 use App\Http\Controllers\SpendingController;
@@ -20,6 +21,10 @@ Route::get('dashboard', DashboardController::class)
 Route::middleware('auth')->group(function () {
     Route::resource('accounts', AccountController::class)->only(['index', 'store', 'update', 'destroy']);
     Route::resource('categories', CategoryController::class)->only(['index', 'store', 'update', 'destroy']);
+    Route::post('transactions/bulk', [TransactionController::class, 'bulk'])->name('transactions.bulk');
+    Route::post('transactions/{transaction}/pair', [TransactionController::class, 'pair'])->name('transactions.pair');
+    Route::post('payee-rules', [PayeeRuleController::class, 'store'])->name('payee-rules.store');
+    Route::delete('payee-rules/{payeeRule}', [PayeeRuleController::class, 'destroy'])->name('payee-rules.destroy');
     Route::resource('transactions', TransactionController::class)->only(['index', 'store', 'update', 'destroy']);
     Route::post('accounts/{account}/balance', [AccountController::class, 'setBalance'])->name('accounts.balance');
     Route::get('spending', SpendingController::class)->name('spending');

@@ -11,7 +11,10 @@ class Category extends Model
 {
     use HasFactory;
 
-    public const KINDS = ['expense' => 'Spending', 'income' => 'Income', 'transfer' => 'Transfer'];
+    public const KINDS = ['income' => 'Income', 'expense' => 'Spending', 'transfer' => 'Transfer between accounts'];
+
+    /** Income first, then spending, then transfers. */
+    public const KIND_ORDER = "case kind when 'income' then 0 when 'expense' then 1 else 2 end";
 
     protected $fillable = ['parent_id', 'name', 'kind'];
 
@@ -51,7 +54,7 @@ class Category extends Model
     public static function options(): array
     {
         $out = [];
-        foreach (self::whereNull('parent_id')->with('children')->orderBy('name')->get() as $main) {
+        foreach (self::whereNull('parent_id')->with('children')->orderByRaw(self::KIND_ORDER)->orderBy('name')->get() as $main) {
             $out[] = ['id' => $main->id, 'label' => $main->name, 'name' => $main->name, 'parent_id' => null, 'kind' => $main->kind];
             foreach ($main->children as $sub) {
                 $out[] = ['id' => $sub->id, 'label' => $main->name.' › '.$sub->name, 'name' => $sub->name, 'parent_id' => $main->id, 'kind' => $main->kind];
