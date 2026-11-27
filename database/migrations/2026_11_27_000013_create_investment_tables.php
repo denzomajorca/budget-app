@@ -19,6 +19,9 @@ return new class extends Migration
             // A new account that held nothing before its first deposit, so
             // growth can be worked out from $0 without a starting statement.
             $table->boolean('started_empty')->default(false);
+            // The share of the account you want in stocks (the rest in
+            // bonds and cash), e.g. 65 for a 65/35 mix.
+            $table->unsignedTinyInteger('target_stock_share')->nullable();
             $table->timestamps();
         });
 
@@ -61,6 +64,7 @@ return new class extends Migration
             $table->foreignId('investment_import_id')->nullable()->constrained()->cascadeOnDelete();
             $table->date('date');
             $table->bigInteger('balance'); // cents
+            $table->bigInteger('loan_balance')->nullable(); // cents still owed on a 401(k) loan
             $table->string('source', 20)->default('typed'); // typed, holdings
             $table->timestamps();
             $table->unique(['investment_account_id', 'date']);
@@ -81,10 +85,21 @@ return new class extends Migration
             $table->timestamps();
             $table->index(['investment_account_id', 'as_of']);
         });
+
+        // What each fund invests in, remembered across holdings files, so
+        // the app can show stocks against bonds.
+        Schema::create('investment_funds', function (Blueprint $table) {
+            $table->id();
+            $table->string('key', 150)->unique(); // symbol, or the name in lower case
+            $table->string('asset_class', 20); // us_stock, intl_stock, bond, cash, mixed, other
+            $table->unsignedTinyInteger('stock_share')->default(100); // for a mix: percent in stocks
+            $table->timestamps();
+        });
     }
 
     public function down(): void
     {
+        Schema::dropIfExists('investment_funds');
         Schema::dropIfExists('investment_holdings');
         Schema::dropIfExists('investment_balances');
         Schema::dropIfExists('investment_activities');

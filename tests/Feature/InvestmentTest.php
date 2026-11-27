@@ -189,4 +189,38 @@ class InvestmentTest extends TestCase
         $this->assertSame(10_000_00, $row['put_in']);
         $this->assertSame(122_86, $row['gain']);
     }
+
+    public function test_stocks_and_bonds_split_and_target(): void
+    {
+        $a = $this->k401();
+        $rows = [
+            ['name' => 'JPMorgan U.S. Equity Fund', 'value' => 80_000_00],
+            ['name' => 'JH Multimanager Growth LS', 'value' => 20_000_00],
+        ];
+        $this->post('/investments/import', ['account_id' => $a->id, 'file_name' => 'Typed in', 'type' => 'holdings', 'as_of' => '2026-11-25', 'rows' => $rows])->assertSessionHasNoErrors();
+        $h = $this->props()['holdings']['accounts'][0];
+        $this->assertSame('us_stock', $h['rows'][0]['asset_class']);
+        $this->assertSame('mixed', $h['rows'][1]['asset_class']);
+        // 80,000 + 80% of 20,000 in stocks
+        $this->assertSame(96_000_00, $h['mix']['stocks']);
+        $this->assertSame(4_000_00, $h['mix']['bond']);
+        $this->assertNull($h['target']);
+
+        $this->put('/investments/accounts/'.$a->id.'/target', ['target_stock_share' => 65])->assertSessionHasNoErrors();
+        $t = $this->props()['holdings']['accounts'][0]['target'];
+        $this->assertSame(65, $t['stock_share']);
+        $this->assertSame(31_000_00, $t['move']);
+
+        // Say the mix fund is 70% stocks: remembered for later files too.
+        $this->post('/investments/funds', ['key' => 'jh multimanager growth ls', 'asset_class' => 'mixed', 'stock_share' => 70])->assertSessionHasNoErrors();
+        $this->assertSame(94_000_00, $this->props()['holdings']['accounts'][0]['mix']['stocks']);
+    }
+
+    public function test_loan_balance_is_saved_with_a_statement(): void
+    {
+        $a = $this->k401();
+        $this->post('/investments/balances', ['account_id' => $a->id, 'date' => '2026-11-25', 'balance' => '250,000.00', 'loan_balance' => '9,000.50'])->assertSessionHasNoErrors();
+        $row = $this->props()['rows'][0];
+        $this->assertSame(['amount' => 9_000_50, 'date' => '2026-11-25'], $row['loan']);
+    }
 }

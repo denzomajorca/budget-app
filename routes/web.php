@@ -43,6 +43,8 @@ Route::middleware('auth')->group(function () {
     Route::post('investments/accounts', [InvestmentController::class, 'storeAccount'])->name('investments.accounts.store');
     Route::put('investments/accounts/{account}', [InvestmentController::class, 'updateAccount'])->name('investments.accounts.update');
     Route::delete('investments/accounts/{account}', [InvestmentController::class, 'destroyAccount'])->name('investments.accounts.destroy');
+    Route::put('investments/accounts/{account}/target', [InvestmentController::class, 'storeTarget'])->name('investments.accounts.target');
+    Route::post('investments/funds', [InvestmentController::class, 'storeFund'])->name('investments.funds.store');
     Route::post('investments/balances', [InvestmentController::class, 'storeBalance'])->name('investments.balances.store');
     Route::delete('investments/balances/{balance}', [InvestmentController::class, 'destroyBalance'])->name('investments.balances.destroy');
     Route::post('investments/activity', [InvestmentController::class, 'storeActivity'])->name('investments.activity.store');

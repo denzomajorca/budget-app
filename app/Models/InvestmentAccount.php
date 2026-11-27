@@ -16,11 +16,11 @@ class InvestmentAccount extends Model
         'other' => 'Other',
     ];
 
-    protected $fillable = ['name', 'kind', 'institution', 'started_empty'];
+    protected $fillable = ['name', 'kind', 'institution', 'started_empty', 'target_stock_share'];
 
     protected function casts(): array
     {
-        return ['started_empty' => 'boolean'];
+        return ['started_empty' => 'boolean', 'target_stock_share' => 'integer'];
     }
 
     public function activities(): HasMany

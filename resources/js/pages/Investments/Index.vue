@@ -36,6 +36,8 @@ interface Row {
     annual: number | null;
     partial: boolean;
     opened: boolean;
+    loan: { amount: number; date: string } | null;
+    target_stock_share: number | null;
     needs: 'balance' | 'second_balance' | null;
 }
 interface Fund {
@@ -50,7 +52,18 @@ interface Fund {
     gain: number;
     price_change: number | null;
 }
+interface Mix {
+    us_stock: number;
+    intl_stock: number;
+    mix_stock: number;
+    bond: number;
+    cash: number;
+    other: number;
+    stocks: number;
+}
 interface HoldingsAccount {
+    mix: Mix;
+    target: { stock_share: number; current: number; move: number } | null;
     id: number;
     name: string;
     as_of: string;
@@ -64,6 +77,9 @@ interface HoldingsAccount {
         value: number;
         cost: number | null;
         share: number;
+        key: string;
+        asset_class: string;
+        stock_share: number;
     }[];
 }
 const props = defineProps<{
@@ -71,6 +87,7 @@ const props = defineProps<{
     timeframes: Record<string, string>;
     timeframe: { key: string; label: string; from: string | null; to: string };
     kinds: Record<string, string>;
+    assetClasses: Record<string, string>;
     activityKinds: Record<string, { label: string; flow: string }>;
     accounts: Acct[];
     rows: Row[];
@@ -95,8 +112,13 @@ const props = defineProps<{
         months: { month: string; employee: number; employer: number; loan_repayment: number; deposit: number; out: number; earnings: number }[];
         funds: Fund[];
     };
-    holdings: { accounts: HoldingsAccount[]; combined: { symbol: string | null; name: string; value: number; share: number }[]; total: number };
-    balances: { id: number; account_id: number; date: string; balance: number; source: string }[];
+    holdings: {
+        accounts: HoldingsAccount[];
+        combined: { symbol: string | null; name: string; value: number; share: number }[];
+        total: number;
+        mix: Mix;
+    };
+    balances: { id: number; account_id: number; date: string; balance: number; loan_balance: number | null; source: string }[];
     recent: {
         id: number;
         account_id: number;
@@ -228,12 +250,14 @@ const selectedAccount = computed(() => props.accounts.find((a) => a.id === props
 
 // Balance dialog
 const balOpen = ref(false);
-const balForm = useForm({ account_id: null as number | null, date: today(), balance: '' });
+const balForm = useForm({ account_id: null as number | null, date: today(), balance: '', loan_balance: '' });
+const balIs401k = computed(() => props.accounts.find((a) => a.id === balForm.account_id)?.kind === '401k');
 function addBalance(accountId?: number) {
     balForm.clearErrors();
     balForm.account_id = accountId ?? props.filters.account ?? props.accounts[0]?.id ?? null;
     balForm.date = today();
     balForm.balance = '';
+    balForm.loan_balance = '';
     balOpen.value = true;
 }
 function saveBalance() {
@@ -262,7 +286,16 @@ const undoImport = (id: number) => router.delete(route('investments.import.destr
 // Typed holdings
 const holdOpen = ref(false);
 const holdErr = ref('');
-const holdForm = ref({ account_id: null as number | null, as_of: today(), rows: [] as { name: string; value: string }[] });
+const holdForm = ref({ account_id: null as number | null, as_of: today(), total: '', rows: [] as { name: string; pct: string; value: string }[] });
+const toNum = (v: string) => parseFloat(v.replace(/[$,%\s]/g, '')) || 0;
+function pctTyped(r: { pct: string; value: string }) {
+    const t = toNum(holdForm.value.total);
+    if (t && r.pct) r.value = ((t * toNum(r.pct)) / 100).toFixed(2);
+}
+function totalTyped() {
+    holdForm.value.rows.forEach(pctTyped);
+}
+const pctSum = computed(() => holdForm.value.rows.reduce((s, r) => s + toNum(r.pct), 0));
 function typeHoldings() {
     holdErr.value = '';
     const id = props.filters.account ?? props.accounts[0]?.id ?? null;
@@ -270,15 +303,19 @@ function typeHoldings() {
     holdForm.value = {
         account_id: id,
         as_of: today(),
-        rows: cur ? cur.rows.map((r) => ({ name: r.name, value: (r.value / 100).toFixed(2) })) : [{ name: '', value: '' }],
+        total: '',
+        rows: cur
+            ? cur.rows.map((r) => ({ name: r.name, pct: '', value: (r.value / 100).toFixed(2) }))
+            : [
+                  { name: '', pct: '', value: '' },
+                  { name: '', pct: '', value: '' },
+              ],
     };
     holdOpen.value = true;
 }
-const holdTotal = computed(() => holdForm.value.rows.reduce((s, r) => s + (parseFloat(r.value.replace(/[$,\s]/g, '')) || 0), 0));
+const holdTotal = computed(() => holdForm.value.rows.reduce((s, r) => s + toNum(r.value), 0));
 function saveHoldings() {
-    const rows = holdForm.value.rows
-        .map((r) => ({ name: r.name.trim(), value: Math.round((parseFloat(r.value.replace(/[$,\s]/g, '')) || 0) * 100) }))
-        .filter((r) => r.name && r.value);
+    const rows = holdForm.value.rows.map((r) => ({ name: r.name.trim(), value: Math.round(toNum(r.value) * 100) })).filter((r) => r.name && r.value);
     if (!rows.length) {
         holdErr.value = 'Type at least one fund and its value.';
         return;
@@ -293,6 +330,31 @@ function saveHoldings() {
         },
     );
 }
+
+// Stocks and bonds
+const mixParts = (m: Mix) =>
+    [
+        { key: 'us_stock', label: 'U.S. stocks', cls: 'bg-sky-600', value: m.us_stock },
+        { key: 'intl_stock', label: 'International stocks', cls: 'bg-sky-400', value: m.intl_stock },
+        { key: 'mix_stock', label: 'Stocks inside mixed funds', cls: 'bg-indigo-500', value: m.mix_stock },
+        { key: 'bond', label: 'Bonds', cls: 'bg-amber-500', value: m.bond },
+        { key: 'cash', label: 'Cash', cls: 'bg-emerald-600', value: m.cash },
+        { key: 'other', label: 'Other', cls: 'bg-slate-400', value: m.other },
+    ].filter((p) => p.value > 0);
+const mixTotal = (m: Mix) => m.us_stock + m.intl_stock + m.mix_stock + m.bond + m.cash + m.other;
+function setClass(key: string, asset_class: string, stock_share?: number) {
+    router.post(
+        route('investments.funds.store'),
+        { key, asset_class, stock_share: stock_share ?? null },
+        { preserveScroll: true, preserveState: true },
+    );
+}
+const targetInput = ref<Record<number, string>>({});
+function saveTarget(accountId: number, clear = false) {
+    const v = clear ? null : Math.round(toNum(targetInput.value[accountId] ?? ''));
+    router.put(route('investments.accounts.target', accountId), { target_stock_share: v }, { preserveScroll: true, preserveState: true });
+}
+const targetOf = (id: number) => props.accounts.find((a) => a.id === id)?.target_stock_share ?? null;
 
 const importOpen = ref(false);
 const showAll = ref(false);
@@ -514,6 +576,9 @@ const has401k = computed(() => flowIn.value.employee !== 0 || flowIn.value.emplo
                                                 ><template v-else-if="r.partial"> (your first balance)</template></template
                                             >
                                         </div>
+                                        <div v-if="r.loan && r.loan.amount > 0" class="text-xs text-amber-700 dark:text-amber-400">
+                                            Loan still owed {{ money(r.loan.amount) }} ({{ shortDate(r.loan.date) }})
+                                        </div>
                                     </td>
                                     <td class="hidden px-3 py-2 text-right tabular-nums sm:table-cell">{{ r.start !== null ? m0(r.start) : '' }}</td>
                                     <td class="hidden px-3 py-2 text-right tabular-nums sm:table-cell">
@@ -550,6 +615,7 @@ const has401k = computed(() => flowIn.value.employee !== 0 || flowIn.value.emplo
                                         {{ shortDate(b.date) }}
                                         <span v-if="multi" class="text-muted-foreground"> · {{ acctName(b.account_id) }}</span>
                                         <span v-if="b.source === 'holdings'" class="text-muted-foreground"> · from holdings</span>
+                                        <span v-if="b.loan_balance" class="text-muted-foreground"> · loan owed {{ money(b.loan_balance) }}</span>
                                     </span>
                                     <span class="flex items-center gap-2">
                                         <span class="tabular-nums">{{ money(b.balance) }}</span>
@@ -801,6 +867,19 @@ const has401k = computed(() => flowIn.value.employee !== 0 || flowIn.value.emplo
                                 <CardDescription>{{ m0(holdings.total) }} across {{ holdings.accounts.length }} accounts</CardDescription>
                             </CardHeader>
                             <CardContent>
+                                <p class="mb-2 text-sm">
+                                    <b>{{ share(holdings.mix.stocks / (mixTotal(holdings.mix) || 1)) }} stocks</b>,
+                                    {{ share(1 - holdings.mix.stocks / (mixTotal(holdings.mix) || 1)) }} bonds and cash
+                                </p>
+                                <div class="mb-4 flex h-3 overflow-hidden rounded-full bg-muted">
+                                    <div
+                                        v-for="p in mixParts(holdings.mix)"
+                                        :key="p.key"
+                                        :class="p.cls"
+                                        :style="{ width: `${(p.value / (mixTotal(holdings.mix) || 1)) * 100}%` }"
+                                        :title="p.label"
+                                    />
+                                </div>
                                 <div class="flex h-3 overflow-hidden rounded-full bg-muted">
                                     <div
                                         v-for="(c, i) in holdings.combined"
@@ -831,6 +910,69 @@ const has401k = computed(() => flowIn.value.employee !== 0 || flowIn.value.emplo
                                 </div>
                             </CardHeader>
                             <CardContent>
+                                <div class="mb-4 grid gap-2 rounded-md border p-3">
+                                    <div class="flex flex-wrap items-baseline justify-between gap-2 text-sm">
+                                        <span
+                                            ><b>Stocks vs bonds:</b> {{ share(h.mix.stocks / (h.total || 1)) }} stocks,
+                                            {{ share(1 - h.mix.stocks / (h.total || 1)) }} bonds and cash</span
+                                        >
+                                        <span v-if="h.target" class="text-muted-foreground"
+                                            >Target {{ h.target.stock_share }}/{{ 100 - h.target.stock_share }}</span
+                                        >
+                                    </div>
+                                    <div class="relative">
+                                        <div class="flex h-3 overflow-hidden rounded-full bg-muted">
+                                            <div
+                                                v-for="p in mixParts(h.mix)"
+                                                :key="p.key"
+                                                :class="p.cls"
+                                                :style="{ width: `${(p.value / (mixTotal(h.mix) || 1)) * 100}%` }"
+                                                :title="p.label"
+                                            />
+                                        </div>
+                                        <div
+                                            v-if="h.target"
+                                            class="absolute -top-1 h-5 w-0.5 bg-foreground"
+                                            :style="{ left: `calc(${h.target.stock_share}% - 1px)` }"
+                                            aria-hidden="true"
+                                        />
+                                    </div>
+                                    <div class="flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground">
+                                        <span v-for="p in mixParts(h.mix)" :key="p.key" class="inline-flex items-center gap-1.5"
+                                            ><span class="size-2.5 rounded-full" :class="p.cls" />{{ p.label }}
+                                            {{ share(p.value / (mixTotal(h.mix) || 1)) }}</span
+                                        >
+                                        <span v-if="h.target" class="inline-flex items-center gap-1.5"
+                                            ><span class="h-3 w-0.5 bg-foreground" /> your target</span
+                                        >
+                                    </div>
+                                    <p v-if="h.target" class="text-sm">
+                                        <template v-if="Math.abs(h.target.move) < h.total * 0.01">You’re on target.</template>
+                                        <template v-else-if="h.target.move > 0"
+                                            >To reach {{ h.target.stock_share }}/{{ 100 - h.target.stock_share }}, move about
+                                            <b>{{ m0(h.target.move) }}</b> from stocks into bonds.</template
+                                        >
+                                        <template v-else
+                                            >To reach {{ h.target.stock_share }}/{{ 100 - h.target.stock_share }}, move about
+                                            <b>{{ m0(-h.target.move) }}</b> from bonds or cash into stocks.</template
+                                        >
+                                    </p>
+                                    <form class="flex flex-wrap items-center gap-2 text-sm" @submit.prevent="saveTarget(h.id)">
+                                        <Label :for="`tg-${h.id}`">Target in stocks</Label>
+                                        <Input
+                                            :id="`tg-${h.id}`"
+                                            v-model="targetInput[h.id]"
+                                            inputmode="numeric"
+                                            class="h-8 w-20"
+                                            :placeholder="targetOf(h.id) !== null ? String(targetOf(h.id)) : '65'"
+                                        />
+                                        <span>%</span>
+                                        <Button type="submit" size="sm" variant="outline">Save target</Button>
+                                        <Button v-if="h.target" type="button" size="sm" variant="ghost" @click="saveTarget(h.id, true)"
+                                            >Remove</Button
+                                        >
+                                    </form>
+                                </div>
                                 <div class="flex h-3 overflow-hidden rounded-full bg-muted">
                                     <div
                                         v-for="(r, i) in h.rows"
@@ -865,6 +1007,31 @@ const has401k = computed(() => flowIn.value.employee !== 0 || flowIn.value.emplo
                                                                 class="block text-xs"
                                                                 :class="r.value >= r.cost ? 'text-emerald-700 dark:text-emerald-400' : 'text-red-600'"
                                                                 >{{ signed0(r.value - r.cost) }} on {{ m0(r.cost) }} paid</span
+                                                            ><span class="mt-1 flex flex-wrap items-center gap-1.5 text-xs text-muted-foreground"
+                                                                ><select
+                                                                    class="h-7 rounded border bg-background px-1.5 py-0 text-xs"
+                                                                    :aria-label="`What ${r.name} invests in`"
+                                                                    :value="r.asset_class"
+                                                                    @change="setClass(r.key, ($event.target as HTMLSelectElement).value)"
+                                                                >
+                                                                    <option v-for="(l, k) in assetClasses" :key="k" :value="k">
+                                                                        {{ l }}
+                                                                    </option></select
+                                                                ><template v-if="r.asset_class === 'mixed'"
+                                                                    ><input
+                                                                        class="h-7 w-12 rounded border bg-background px-1.5 text-xs"
+                                                                        inputmode="numeric"
+                                                                        :aria-label="`Percent of ${r.name} in stocks`"
+                                                                        :value="r.stock_share"
+                                                                        @change="
+                                                                            setClass(
+                                                                                r.key,
+                                                                                'mixed',
+                                                                                Math.round(toNum(($event.target as HTMLInputElement).value)),
+                                                                            )
+                                                                        "
+                                                                    />% stocks</template
+                                                                ></span
                                                             ></span
                                                         ></span
                                                     >
@@ -972,6 +1139,11 @@ const has401k = computed(() => flowIn.value.employee !== 0 || flowIn.value.emplo
                             <InputError :message="balForm.errors.balance" />
                         </div>
                     </div>
+                    <div v-if="balIs401k" class="grid gap-2 sm:max-w-[calc(50%-0.5rem)]">
+                        <Label for="ib-loan">Loan still owed (optional)</Label>
+                        <Input id="ib-loan" v-model="balForm.loan_balance" inputmode="decimal" placeholder="0.00" />
+                        <InputError :message="balForm.errors.loan_balance" />
+                    </div>
                 </form>
                 <DialogFooter>
                     <Button type="submit" form="bal-form" :disabled="balForm.processing">Save</Button>
@@ -1045,18 +1217,43 @@ const has401k = computed(() => flowIn.value.employee !== 0 || flowIn.value.emplo
                         </div>
                     </div>
                     <div class="grid gap-2">
+                        <Label for="ih-total">Total balance (optional)</Label>
+                        <Input
+                            id="ih-total"
+                            v-model="holdForm.total"
+                            inputmode="decimal"
+                            placeholder="0.00"
+                            class="sm:max-w-48"
+                            @input="totalTyped"
+                        />
+                        <p class="text-xs text-muted-foreground">
+                            With a total, you can type each fund’s percent and the value is worked out for you.
+                        </p>
+                    </div>
+                    <div class="grid gap-2">
                         <div v-for="(r, i) in holdForm.rows" :key="i" class="flex gap-2">
                             <Input v-model="r.name" placeholder="Fund name" class="min-w-0 flex-1" :aria-label="`Fund ${i + 1}`" />
-                            <Input v-model="r.value" inputmode="decimal" placeholder="Value" class="w-32" :aria-label="`Value ${i + 1}`" />
+                            <Input
+                                v-model="r.pct"
+                                inputmode="decimal"
+                                placeholder="%"
+                                class="w-16"
+                                :aria-label="`Percent ${i + 1}`"
+                                @input="pctTyped(r)"
+                            />
+                            <Input v-model="r.value" inputmode="decimal" placeholder="Value" class="w-28" :aria-label="`Value ${i + 1}`" />
                             <Button variant="ghost" size="icon" aria-label="Remove line" @click="holdForm.rows.splice(i, 1)"
                                 ><Trash2 class="size-4"
                             /></Button>
                         </div>
                         <div class="flex items-center justify-between">
-                            <Button variant="outline" size="sm" @click="holdForm.rows.push({ name: '', value: '' })"
+                            <Button variant="outline" size="sm" @click="holdForm.rows.push({ name: '', pct: '', value: '' })"
                                 ><Plus class="size-4" /> Add a fund</Button
                             >
-                            <span class="text-sm tabular-nums">Total {{ money(Math.round(holdTotal * 100)) }}</span>
+                            <span class="text-sm tabular-nums"
+                                ><template v-if="pctSum">{{ Math.round(pctSum * 10) / 10 }}% · </template>Total
+                                {{ money(Math.round(holdTotal * 100)) }}</span
+                            >
                         </div>
                     </div>
                     <InputError :message="holdErr" />

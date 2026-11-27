@@ -5,6 +5,7 @@ namespace App\Support;
 use App\Models\InvestmentAccount;
 use App\Models\InvestmentActivity;
 use App\Models\InvestmentBalance;
+use App\Models\InvestmentFund;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Collection;
 
@@ -106,6 +107,8 @@ class InvestmentReport
             'annual' => null,
             'partial' => false,
             'opened' => false,
+            'loan' => ($l = $a->balances->whereNotNull('loan_balance')->sortBy('date')->last()) ? ['amount' => $l->loan_balance, 'date' => $l->date->toDateString()] : null,
+            'target_stock_share' => $a->target_stock_share,
             'needs' => $last ? null : 'balance',
         ];
         if (! $last) {
@@ -293,11 +296,18 @@ class InvestmentReport
         ];
     }
 
-    /** Latest holdings of each account, and a combined allocation. */
+    /** Latest holdings of each account, how they split between stocks and bonds, and the combined picture. */
     public function holdings(): array
     {
         $accounts = [];
         $combined = [];
+        $latest = $this->accounts->flatMap(function ($a) {
+            $asOf = $a->holdings->max('as_of');
+
+            return $asOf ? $a->holdings->filter(fn ($h) => $h->as_of->eq($asOf)) : [];
+        });
+        $classes = InvestmentFund::lookup($latest);
+        $all = self::emptyMix();
         foreach ($this->accounts as $a) {
             $asOf = $a->holdings->max('as_of');
             if (! $asOf) {
@@ -305,13 +315,16 @@ class InvestmentReport
             }
             $rows = $a->holdings->filter(fn ($h) => $h->as_of->eq($asOf))->sortByDesc('value')->values();
             $total = (int) $rows->sum('value');
-            $accounts[] = [
-                'id' => $a->id,
-                'name' => $a->name,
-                'as_of' => $asOf->toDateString(),
-                'total' => $total,
-                'rows' => $rows->map(fn ($h) => [
+            $mix = self::emptyMix();
+            $list = [];
+            foreach ($rows as $h) {
+                $key = InvestmentFund::keyFor($h->symbol, $h->name);
+                [$class, $stockShare] = $classes[$key];
+                self::addToMix($mix, $class, $stockShare, $h->value);
+                self::addToMix($all, $class, $stockShare, $h->value);
+                $list[] = [
                     'id' => $h->id,
+                    'key' => $key,
                     'symbol' => $h->symbol,
                     'name' => $h->name,
                     'quantity' => $h->quantity,
@@ -319,18 +332,64 @@ class InvestmentReport
                     'value' => $h->value,
                     'cost' => $h->cost,
                     'share' => $total > 0 ? $h->value / $total : 0,
-                ])->all(),
-            ];
-            foreach ($rows as $h) {
-                $key = $h->symbol ?: mb_strtolower($h->name);
+                    'asset_class' => $class,
+                    'stock_share' => $stockShare,
+                ];
                 $combined[$key] ??= ['symbol' => $h->symbol, 'name' => $h->name, 'value' => 0];
                 $combined[$key]['value'] += $h->value;
             }
+            $accounts[] = [
+                'id' => $a->id,
+                'name' => $a->name,
+                'as_of' => $asOf->toDateString(),
+                'total' => $total,
+                'rows' => $list,
+                'mix' => $mix,
+                'target' => self::target($mix, $total, $a->target_stock_share),
+            ];
         }
         $sum = array_sum(array_column($combined, 'value'));
         $combined = array_values(array_map(fn ($c) => $c + ['share' => $sum > 0 ? $c['value'] / $sum : 0], $combined));
         usort($combined, fn ($a, $b) => $b['value'] <=> $a['value']);
 
-        return ['accounts' => $accounts, 'combined' => $combined, 'total' => $sum];
+        return ['accounts' => $accounts, 'combined' => $combined, 'total' => $sum, 'mix' => $all];
+    }
+
+    private static function emptyMix(): array
+    {
+        return ['us_stock' => 0, 'intl_stock' => 0, 'mix_stock' => 0, 'bond' => 0, 'cash' => 0, 'other' => 0, 'stocks' => 0];
+    }
+
+    /** A mixed fund is split into its stock and bond parts. */
+    private static function addToMix(array &$mix, string $class, int $stockShare, int $value): void
+    {
+        if ($class === 'mixed') {
+            $stocks = (int) round($value * $stockShare / 100);
+            $mix['mix_stock'] += $stocks;
+            $mix['bond'] += $value - $stocks;
+            $mix['stocks'] += $stocks;
+
+            return;
+        }
+        $mix[$class] += $value;
+        if (in_array($class, ['us_stock', 'intl_stock'], true)) {
+            $mix['stocks'] += $value;
+        }
+    }
+
+    /** How far the stocks share is from the target, and the dollars to move. */
+    private static function target(array $mix, int $total, ?int $target): ?array
+    {
+        if ($target === null || $total <= 0) {
+            return null;
+        }
+        $want = (int) round($total * $target / 100);
+
+        return [
+            'stock_share' => $target,
+            'current' => $mix['stocks'] / $total,
+            // Positive: move this much out of stocks into bonds; negative: the other way.
+            'move' => $mix['stocks'] - $want,
+        ];
     }
 }

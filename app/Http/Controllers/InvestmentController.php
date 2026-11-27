@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Models\InvestmentAccount;
 use App\Models\InvestmentActivity;
 use App\Models\InvestmentBalance;
+use App\Models\InvestmentFund;
 use App\Models\InvestmentHolding;
 use App\Models\InvestmentImport;
 use App\Rules\MoneyAmount;
@@ -35,15 +36,16 @@ class InvestmentController extends Controller
             'timeframes' => InvestmentReport::TIMEFRAMES,
             'timeframe' => $report->timeframe(),
             'kinds' => InvestmentAccount::KINDS,
+            'assetClasses' => array_map(fn ($c) => $c[0], InvestmentFund::CLASSES),
             'activityKinds' => array_map(fn ($k) => ['label' => $k[0], 'flow' => $k[1]], InvestmentActivity::KINDS),
-            'accounts' => $all->map(fn ($a) => ['id' => $a->id, 'name' => $a->name, 'kind' => $a->kind, 'institution' => $a->institution, 'started_empty' => $a->started_empty])->values(),
+            'accounts' => $all->map(fn ($a) => ['id' => $a->id, 'name' => $a->name, 'kind' => $a->kind, 'institution' => $a->institution, 'started_empty' => $a->started_empty, 'target_stock_share' => $a->target_stock_share])->values(),
             'rows' => $rows,
             'summary' => $report->summary($rows),
             'chart' => $report->chart(),
             'activity' => $report->activity(),
             'holdings' => $report->holdings(),
             'balances' => InvestmentBalance::whereIn('investment_account_id', $ids)->orderByDesc('date')->get()
-                ->map(fn ($b) => ['id' => $b->id, 'account_id' => $b->investment_account_id, 'date' => $b->date->toDateString(), 'balance' => $b->balance, 'source' => $b->source]),
+                ->map(fn ($b) => ['id' => $b->id, 'account_id' => $b->investment_account_id, 'date' => $b->date->toDateString(), 'balance' => $b->balance, 'loan_balance' => $b->loan_balance, 'source' => $b->source]),
             'recent' => InvestmentActivity::whereIn('investment_account_id', $ids)->orderByDesc('date')->orderByDesc('id')->limit(300)->get()
                 ->map(fn ($x) => [
                     'id' => $x->id,
@@ -91,7 +93,30 @@ class InvestmentController extends Controller
             'kind' => ['required', Rule::in(array_keys(InvestmentAccount::KINDS))],
             'institution' => ['nullable', 'string', 'max:100'],
             'started_empty' => ['nullable', 'boolean'],
-        ]) + ['started_empty' => false];
+            'target_stock_share' => ['nullable', 'integer', 'between:0,100'],
+        ]) + ['started_empty' => false, 'target_stock_share' => null];
+    }
+
+    /** Remembers what a fund invests in, for the stocks and bonds view. */
+    public function storeFund(Request $request): RedirectResponse
+    {
+        $data = $request->validate([
+            'key' => ['required', 'string', 'max:150'],
+            'asset_class' => ['required', Rule::in(array_keys(InvestmentFund::CLASSES))],
+            'stock_share' => ['nullable', 'integer', 'between:0,100'],
+        ]);
+        $share = $data['asset_class'] === 'mixed' ? (int) ($data['stock_share'] ?? 80) : InvestmentFund::CLASSES[$data['asset_class']][1];
+        InvestmentFund::updateOrCreate(['key' => $data['key']], ['asset_class' => $data['asset_class'], 'stock_share' => $share]);
+
+        return back()->with('status', 'Saved.');
+    }
+
+    public function storeTarget(Request $request, InvestmentAccount $account): RedirectResponse
+    {
+        $data = $request->validate(['target_stock_share' => ['nullable', 'integer', 'between:0,100']]);
+        $account->update(['target_stock_share' => $data['target_stock_share'] ?? null]);
+
+        return back()->with('status', $account->target_stock_share === null ? 'Target removed.' : 'Target saved.');
     }
 
     public function storeBalance(Request $request): RedirectResponse
@@ -100,10 +125,16 @@ class InvestmentController extends Controller
             'account_id' => ['required', 'integer', Rule::exists('investment_accounts', 'id')],
             'date' => ['required', 'date_format:Y-m-d', 'before_or_equal:today'],
             'balance' => ['required', new MoneyAmount],
+            'loan_balance' => ['nullable', new MoneyAmount],
         ], ['date.before_or_equal' => 'The statement date can’t be in the future.']);
         $b = InvestmentBalance::where('investment_account_id', $data['account_id'])->whereDate('date', $data['date'])->first()
             ?? new InvestmentBalance(['investment_account_id' => $data['account_id'], 'date' => $data['date']]);
-        $b->fill(['balance' => abs(Money::toCents((string) $data['balance'])), 'source' => 'typed', 'investment_import_id' => null])->save();
+        $b->fill([
+            'balance' => abs(Money::toCents((string) $data['balance'])),
+            'loan_balance' => filled($data['loan_balance'] ?? null) ? abs(Money::toCents((string) $data['loan_balance'])) : null,
+            'source' => 'typed',
+            'investment_import_id' => null,
+        ])->save();
 
         return back()->with('status', 'Balance saved.');
     }
