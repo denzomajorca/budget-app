@@ -53,6 +53,9 @@ class ReportsTest extends TestCase
             $this->tx($this->card, "$m-20", 'Payment', 95000, $this->transfer);
         }
         $this->tx($this->card, '2025-11-05', 'Publix', -70000, $this->groceries);
+        // Records reach back to the start of 2025, so 2026 can be compared with it.
+        $this->tx($this->checking, '2025-01-02', 'Moved in', 1000, $this->transfer);
+        $this->tx($this->checking, '2025-01-03', 'Moved out', -1000, $this->transfer);
     }
 
     protected function tearDown(): void
@@ -134,5 +137,13 @@ class ReportsTest extends TestCase
         $this->assertSame(70000, $p['categories'][0]['previous']);
         $this->assertCount(12, $p['months']);
         $this->props('/reports/year?year=2025');
+    }
+
+    public function test_year_in_review_skips_comparison_without_history(): void
+    {
+        Transaction::where('date', '<', '2025-06-01')->delete();
+        $p = $this->props('/reports/year?year=2026');
+        $this->assertNull($p['previous']);
+        $this->assertNull($p['categories'][0]['previous']);
     }
 }

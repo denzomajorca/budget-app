@@ -213,11 +213,14 @@ class ReportsController extends Controller
         $prevTo = $to->copy()->subYearNoOverflow();
 
         $cur = ReportData::totals($from, $to);
-        $prev = ReportData::totals($prevFrom, $prevTo);
+        // Only compare when your records reach back over the whole earlier period.
+        $first = Transaction::min('date');
+        $comparable = $first !== null && Carbon::parse($first)->lte($prevFrom->copy()->endOfMonth());
+        $prev = $comparable ? ReportData::totals($prevFrom, $prevTo) : ['income' => 0, 'spending' => 0];
         $rate = fn ($t) => $t['income'] > 0 ? ($t['income'] - $t['spending']) / $t['income'] : null;
 
         $cats = ReportData::byCategory($from, $to);
-        $prevCats = collect(ReportData::byCategory($prevFrom, $prevTo))->keyBy(fn ($c) => $c['id'] ?? 0);
+        $prevCats = collect($comparable ? ReportData::byCategory($prevFrom, $prevTo) : [])->keyBy(fn ($c) => $c['id'] ?? 0);
         $cats = array_map(fn ($c) => $c + ['previous' => $prevCats[$c['id'] ?? 0]['total'] ?? null], array_slice($cats, 0, 10));
 
         $months = [];

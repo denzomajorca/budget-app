@@ -98,7 +98,8 @@ const notes = computed(() => {
             <header>
                 <h2 class="text-2xl font-semibold">{{ year }} in review</h2>
                 <p class="text-sm text-muted-foreground">
-                    {{ shortDate(from) }} to {{ shortDate(to) }}<template v-if="partial"> (the year so far)</template>
+                    {{ shortDate(from) }} to {{ shortDate(to) }}<template v-if="partial"> (the year so far)</template
+                    ><template v-if="!previous">. Your records don’t reach back far enough to compare with {{ year - 1 }}.</template>
                 </p>
             </header>
 
