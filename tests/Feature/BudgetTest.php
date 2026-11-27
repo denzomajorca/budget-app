@@ -115,4 +115,31 @@ class BudgetTest extends TestCase
     {
         $this->get('/budgets?month=2026-13')->assertInertia(fn (Assert $p) => $p->component('Budgets/Index')->where('month', now()->format('Y-m')));
     }
+
+    public function test_flat_lines_in_your_order_with_hidden_choices_and_unchanged_totals()
+    {
+        $groceries = $this->cat('Food and Dining', 'Groceries');
+        $gas = $this->cat('Auto and Transport', 'Gas');
+        $taxes = $this->cat('Taxes'); // a main category with no subcategories
+        $this->put('/budgets', ['category_id' => $groceries->id, 'amount' => '600']);
+        $this->spend('2026-10-03', 20000, $groceries);
+        $this->spend('2026-10-04', 5000, $gas);
+
+        $props = $this->get('/budgets?month=2026-10')->viewData('page')['props'];
+        $names = array_column($props['lines'], 'name');
+        $this->assertContains('Taxes', $names, 'a main without subcategories is a line itself');
+        $this->assertNotContains('Food and Dining', $names, 'mains with subcategories are not lines');
+        $line = collect($props['lines'])->firstWhere('name', 'Groceries');
+        $this->assertSame('Food and Dining', $line['parent']);
+        $this->assertNull($line['hidden']);
+
+        $this->post('/budgets/layout', ['order' => [$taxes->id, $gas->id, $groceries->id]])->assertSessionHasNoErrors();
+        $this->post('/budgets/layout', ['hidden' => [$gas->id => true]])->assertSessionHasNoErrors();
+
+        $props = $this->get('/budgets?month=2026-10')->viewData('page')['props'];
+        $this->assertSame(['Taxes', 'Gas', 'Groceries'], array_slice(array_column($props['lines'], 'name'), 0, 3));
+        $this->assertTrue(collect($props['lines'])->firstWhere('name', 'Gas')['hidden']);
+        $this->assertSame(25000, $props['totals']['spent'], 'hidden lines still count in the totals');
+        $this->assertSame(60000, $props['totals']['budget']);
+    }
 }

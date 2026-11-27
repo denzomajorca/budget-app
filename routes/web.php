@@ -5,6 +5,8 @@ use App\Http\Controllers\BudgetController;
 use App\Http\Controllers\CategoryController;
 use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\ImportController;
+use App\Http\Controllers\MonthlyController;
+use App\Http\Controllers\PayeeRuleController;
 use App\Http\Controllers\PlanController;
 use App\Http\Controllers\SetupController;
 use App\Http\Controllers\SpendingController;
@@ -20,12 +22,18 @@ Route::get('dashboard', DashboardController::class)
 Route::middleware('auth')->group(function () {
     Route::resource('accounts', AccountController::class)->only(['index', 'store', 'update', 'destroy']);
     Route::resource('categories', CategoryController::class)->only(['index', 'store', 'update', 'destroy']);
+    Route::post('transactions/bulk', [TransactionController::class, 'bulk'])->name('transactions.bulk');
+    Route::post('transactions/{transaction}/pair', [TransactionController::class, 'pair'])->name('transactions.pair');
+    Route::post('payee-rules', [PayeeRuleController::class, 'store'])->name('payee-rules.store');
+    Route::delete('payee-rules/{payeeRule}', [PayeeRuleController::class, 'destroy'])->name('payee-rules.destroy');
     Route::resource('transactions', TransactionController::class)->only(['index', 'store', 'update', 'destroy']);
     Route::post('accounts/{account}/balance', [AccountController::class, 'setBalance'])->name('accounts.balance');
     Route::get('spending', SpendingController::class)->name('spending');
+    Route::get('spending/monthly', MonthlyController::class)->name('spending.monthly');
     Route::get('budgets', [BudgetController::class, 'index'])->name('budgets.index');
     Route::put('budgets', [BudgetController::class, 'update'])->name('budgets.update');
     Route::post('budgets/fill', [BudgetController::class, 'fillFromAverages'])->name('budgets.fill');
+    Route::post('budgets/layout', [BudgetController::class, 'layout'])->name('budgets.layout');
     Route::get('plan', [PlanController::class, 'index'])->name('plan.index');
     Route::post('plan', [PlanController::class, 'store'])->name('plan.store');
     Route::put('plan/{item}', [PlanController::class, 'update'])->name('plan.update');

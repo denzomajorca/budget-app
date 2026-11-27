@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import NativeSelect from '@/components/NativeSelect.vue';
+import SpendingTabs from '@/components/SpendingTabs.vue';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import AppLayout from '@/layouts/AppLayout.vue';
 import { money, shortDate } from '@/lib/money';
@@ -63,9 +64,12 @@ function change(a: number, b: number): { text: string; pct: string; cls: string 
     <Head title="Spending" />
     <AppLayout :breadcrumbs="[{ title: 'Spending', href: '/spending' }]">
         <div class="mx-auto flex w-full max-w-5xl flex-col gap-4 p-4">
-            <div>
-                <h1 class="text-xl font-semibold">Spending by category</h1>
-                <p class="text-sm text-muted-foreground">Compare a month, quarter or year. Tap any amount to see those transactions.</p>
+            <div class="flex flex-wrap items-end justify-between gap-3">
+                <div>
+                    <h1 class="text-xl font-semibold">Spending by category</h1>
+                    <p class="text-sm text-muted-foreground">Compare a month, quarter or year. Tap any amount to see those transactions.</p>
+                </div>
+                <SpendingTabs current="compare" />
             </div>
 
             <Card>

@@ -5,8 +5,11 @@ namespace App\Http\Controllers;
 use App\Models\Account;
 use App\Models\Category;
 use App\Models\Import;
+use App\Models\PayeeRule;
 use App\Models\Transaction;
 use App\Support\CategoryPath;
+use App\Support\TransferCategories;
+use App\Support\Transfers;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -46,7 +49,7 @@ class ImportController extends Controller
         $new = [];
         foreach ($data['rows'] as $r) {
             $path = CategoryPath::split($r['category'] ?? null);
-            if (! $path) {
+            if (! $path || TransferCategories::isMapped($r['payee'] ?? null, $r['category'] ?? null)) {
                 continue;
             }
             [$main, $sub] = $path;
@@ -66,6 +69,7 @@ class ImportController extends Controller
         $data = $this->validateRows($request, true);
         $account = Account::findOrFail($data['account_id']);
 
+        TransferCategories::forget();
         $import = DB::transaction(function () use ($data, $account) {
             $existing = CategoryPath::existing();
             $created = 0;
@@ -104,6 +108,7 @@ class ImportController extends Controller
             ]);
 
             $now = now();
+            $rule = PayeeRule::matcher();
             $insert = [];
             foreach ($data['rows'] as $r) {
                 $insert[] = [
@@ -112,7 +117,11 @@ class ImportController extends Controller
                     'date' => $r['date'],
                     'payee' => mb_substr(trim($r['payee']), 0, 255),
                     'amount' => (int) $r['amount'],
-                    'category_id' => $categoryId($r['category'] ?? null),
+                    // A rule you saved wins over the bank file's category.
+                    'category_id' => $rule($r['payee'])
+                        ?? TransferCategories::forImportRow($r['payee'], $r['category'] ?? null, $account)
+                        ?? $categoryId($r['category'] ?? null),
+                    'needs_review' => true,
                     'memo' => filled($r['memo'] ?? null) ? mb_substr(trim($r['memo']), 0, 1000) : null,
                     'created_at' => $now,
                     'updated_at' => $now,
@@ -129,6 +138,7 @@ class ImportController extends Controller
 
             return $import;
         });
+        Transfers::pair();
 
         return redirect()->route('imports.index', ['done' => $import->id])
             ->with('status', $import->rows_imported.' transactions imported.');
@@ -138,6 +148,8 @@ class ImportController extends Controller
     public function destroy(Import $import): RedirectResponse
     {
         DB::transaction(function () use ($import) {
+            Transaction::whereIn('transfer_id', $import->transactions()->select('id'))->update(['transfer_id' => null]);
+            $import->transactions()->update(['transfer_id' => null]);
             $import->transactions()->delete();
             $import->delete();
         });

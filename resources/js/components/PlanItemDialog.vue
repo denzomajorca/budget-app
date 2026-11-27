@@ -5,6 +5,7 @@ import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { groupByKind } from '@/lib/categories';
 import { centsToInput, money, today } from '@/lib/money';
 import { router, useForm } from '@inertiajs/vue3';
 import { computed, ref, watch } from 'vue';
@@ -17,7 +18,7 @@ export interface PlanItem {
     category_id: number | null;
     category: string | null;
     amount: number;
-    every_months: number | null;
+    frequency_key: string | null;
     frequency: string | null;
     next_due: string | null;
     is_estimate: boolean;
@@ -47,7 +48,7 @@ const form = useForm({
     name: '',
     category_id: null as number | null,
     amount: '',
-    every_months: 1 as number,
+    frequency: '1m',
     next_due: today(),
     is_estimate: false,
     saved: '',
@@ -63,7 +64,7 @@ watch(open, (o) => {
     form.name = i?.name ?? '';
     form.category_id = i?.category_id ?? null;
     form.amount = i ? centsToInput(i.amount) : '';
-    form.every_months = i?.every_months ?? 1;
+    form.frequency = i?.frequency_key ?? '1m';
     form.next_due = i?.next_due ?? today();
     form.is_estimate = i?.is_estimate ?? false;
     form.saved = i && i.saved ? centsToInput(i.saved) : '';
@@ -105,7 +106,9 @@ function destroy() {
                     <Label for="p-cat">Category</Label>
                     <NativeSelect id="p-cat" v-model="form.category_id" @change="categoryPicked">
                         <option :value="null">None</option>
-                        <option v-for="c in categories" :key="c.id" :value="c.id">{{ c.parent_id ? ' ' : '' }}{{ c.label }}</option>
+                        <optgroup v-for="g in groupByKind(categories)" :key="g.kind" :label="g.title">
+                            <option v-for="c in g.options" :key="c.id" :value="c.id">{{ c.parent_id ? ' ' : '' }}{{ c.label }}</option>
+                        </optgroup>
                     </NativeSelect>
                     <p v-if="avg" class="text-xs text-muted-foreground">You've spent about {{ money(avg) }} a month on this lately.</p>
                 </div>
@@ -129,8 +132,8 @@ function destroy() {
                     </div>
                     <div v-if="form.group === 'bill'" class="grid gap-2">
                         <Label for="p-freq">How often</Label>
-                        <NativeSelect id="p-freq" v-model="form.every_months">
-                            <option v-for="(l, k) in frequencies" :key="k" :value="Number(k)">{{ l }}</option>
+                        <NativeSelect id="p-freq" v-model="form.frequency">
+                            <option v-for="(l, k) in frequencies" :key="k" :value="k">{{ l }}</option>
                         </NativeSelect>
                     </div>
                     <div v-if="form.group === 'goal'" class="grid gap-2">
