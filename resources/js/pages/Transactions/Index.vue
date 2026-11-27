@@ -300,14 +300,14 @@ const pageLinks = computed(() => props.transactions.links.map((l) => ({ ...l, la
                                 class="ml-4 mt-4 size-4 shrink-0 rounded border-input"
                                 :aria-label="'Tick ' + t.payee"
                             />
-                            <div class="min-w-0 flex-1">
+                            <div class="w-0 min-w-0 flex-1">
                                 <button type="button" class="flex w-full items-start gap-3 px-3 py-3 pb-2 text-left" @click="edit(t)">
                                     <div class="min-w-0 flex-1">
                                         <div class="truncate font-medium">
                                             {{ t.payee }}
                                             <span
                                                 v-if="t.needs_review"
-                                                class="ml-1 rounded bg-amber-100 px-1.5 py-0.5 text-xs font-normal text-amber-900 dark:bg-amber-900/40 dark:text-amber-200"
+                                                class="ml-1 whitespace-nowrap rounded bg-amber-100 px-1.5 py-0.5 text-xs font-normal text-amber-900 dark:bg-amber-900/40 dark:text-amber-200"
                                                 >To review</span
                                             >
                                         </div>
@@ -318,7 +318,7 @@ const pageLinks = computed(() => props.transactions.links.map((l) => ({ ...l, la
                                         {{ money(t.amount) }}
                                     </div>
                                 </button>
-                                <div v-if="t.needs_review || !t.category_id" class="px-3 pb-3">
+                                <div v-if="(t.needs_review || !t.category_id) && !t.transfer" class="px-3 pb-3">
                                     <NativeSelect
                                         class="h-9 py-0"
                                         :model-value="t.category_id ? String(t.category_id) : ''"
@@ -383,7 +383,7 @@ const pageLinks = computed(() => props.transactions.links.map((l) => ({ ...l, la
                                         {{ t.payee }}
                                         <span
                                             v-if="t.needs_review"
-                                            class="ml-1 rounded bg-amber-100 px-1.5 py-0.5 text-xs font-normal text-amber-900 dark:bg-amber-900/40 dark:text-amber-200"
+                                            class="ml-1 whitespace-nowrap rounded bg-amber-100 px-1.5 py-0.5 text-xs font-normal text-amber-900 dark:bg-amber-900/40 dark:text-amber-200"
                                             >To review</span
                                         >
                                     </div>
