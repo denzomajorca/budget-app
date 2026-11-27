@@ -89,6 +89,8 @@ class RetirementTest extends TestCase
 
         $plan = Retirement::plan($in, Retirement::facts());
         $this->assertSame('short', $plan['status']);
+        // 36,000 a year from about 229,000 saved.
+        $this->assertEqualsWithDelta(15.7, $plan['withdrawal_rate'], 0.5);
         $this->assertNotNull($plan['extra_needed']);
         // The extra amount it suggests is enough with lower returns.
         $this->assertNull(Retirement::project($in, Retirement::facts(), now(), -2.0, $plan['extra_needed'] / 100)['runs_out_at']);

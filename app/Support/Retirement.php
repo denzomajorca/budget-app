@@ -161,7 +161,7 @@ class Retirement
             'expected' => $expected,
             'cautious' => $cautious,
             // Share of savings taken out in the first year of retirement; about 4% is a common safe pace.
-            'withdrawal_rate' => $atRetire > 0 ? $need * 100 / $atRetire : null,
+            'withdrawal_rate' => $atRetire > 0 ? $need * 100 * 100 / $atRetire : null,
             'four_percent_monthly' => (int) round($atRetire * 0.04 / 12),
             'extra_needed' => $extra,
             'retire_at_needed' => $later,

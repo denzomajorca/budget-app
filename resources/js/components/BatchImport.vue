@@ -67,7 +67,7 @@ function apply(it: Item, accountId: number | null) {
     it.settings = settings;
     it.usedSaved = saved;
     it.rows = toRows(it.body, it.firstLine, settings);
-    it.include = accountId !== null && !problem(it);
+    it.include = accountId !== null && !problem(it) && fresh(it) > 0;
 }
 
 const good = (it: Item) => it.rows.filter((r) => !r.error);

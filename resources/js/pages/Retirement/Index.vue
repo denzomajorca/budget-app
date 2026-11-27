@@ -54,7 +54,6 @@ const props = defineProps<{
         status: 'on_track' | 'close' | 'short';
         expected: Projection;
         cautious: Projection;
-        withdrawal_rate: number | null;
         four_percent_monthly: number;
         extra_needed: number | null;
         retire_at_needed: number | null;
@@ -178,12 +177,16 @@ const notes = computed(() => {
             `Your savings need to cover ${dollars(need * 100)} of your ${dollars(i.spending * 100)} a month${ssNow ? ' after Social Security' : ''}.`,
         );
     }
-    if (x.withdrawal_rate !== null && need > 0) {
-        const r = x.withdrawal_rate.toFixed(1);
+    // Once Social Security has started: the share of savings taken out each year.
+    const later = Math.max(0, i.spending - i.social_security);
+    const rate = x.expected.at_retirement > 0 ? (later * 12 * 100 * 100) / x.expected.at_retirement : null;
+    if (rate !== null && later > 0) {
+        const r = rate.toFixed(1);
+        const when = i.social_security ? 'once Social Security starts' : 'each year';
         out.push(
-            x.withdrawal_rate <= 4
-                ? `That's ${r}% of your savings in the first year. Around 4% is a common pace for money to last 30 years.`
-                : `That's ${r}% of your savings in the first year, above the 4% often used as a pace that lasts 30 years.`,
+            rate <= 4
+                ? `That's about ${r}% of your savings a year ${when}. Around 4% is a common pace for money to last 30 years.`
+                : `That's about ${r}% of your savings a year ${when}, above the 4% often used as a pace that lasts 30 years.`,
         );
     }
     out.push(
