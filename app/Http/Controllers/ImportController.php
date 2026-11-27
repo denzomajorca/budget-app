@@ -27,14 +27,19 @@ class ImportController extends Controller
 {
     public const MAX_ROWS = 10000;
 
+    public const MAX_FILES = 20;
+
     public function index(Request $request): Response
     {
         $done = $request->integer('done') ? Import::with('account')->find($request->integer('done')) : null;
+        $batchIds = array_slice(array_filter(array_map('intval', explode(',', (string) $request->query('batch', '')))), 0, self::MAX_FILES);
+        $batch = $batchIds ? Import::with('account:id,name')->whereIn('id', $batchIds)->orderBy('id')->get()->map(fn (Import $i) => self::presentImport($i)) : [];
 
         return Inertia::render('Import/Index', [
             'accounts' => Account::withBalance()->where('is_archived', false)->orderBy('name')->get()
                 ->map(fn (Account $a) => AccountController::present($a) + ['import_settings' => $a->import_settings]),
             'imports' => Import::with('account:id,name')->latest('id')->limit(10)->get()->map(fn (Import $i) => self::presentImport($i)),
+            'batch' => $batch,
             'done' => $done ? self::presentImport($done) + ['account' => AccountController::present(Account::withBalance()->find($done->account_id))] : null,
         ]);
     }
@@ -45,9 +50,15 @@ class ImportController extends Controller
         $data = $this->validateRows($request, false);
         $dups = $this->duplicates((int) $data['account_id'], $data['rows']);
 
+        return response()->json(['duplicates' => $dups, 'new_categories' => $this->newCategories($data['rows'])]);
+    }
+
+    /** Category names that importing these rows would add. */
+    private function newCategories(array $rows): array
+    {
         $existing = CategoryPath::existing();
         $new = [];
-        foreach ($data['rows'] as $r) {
+        foreach ($rows as $r) {
             $path = CategoryPath::split($r['category'] ?? null);
             if (! $path || TransferCategories::isMapped($r['payee'] ?? null, $r['category'] ?? null)) {
                 continue;
@@ -61,7 +72,70 @@ class ImportController extends Controller
             }
         }
 
-        return response()->json(['duplicates' => $dups, 'new_categories' => array_values($new)]);
+        return array_values($new);
+    }
+
+    /**
+     * Several files at once: for each file, how many of its rows each account
+     * already has (same date, amount and payee), and how many of its payees
+     * the account has paid before. The page uses this to pick the account.
+     */
+    public function match(Request $request): JsonResponse
+    {
+        $data = $this->validateFiles($request, false);
+        $accounts = Account::where('is_archived', false)->pluck('id');
+        $payeeKey = fn (string $p) => implode(' ', array_slice(preg_split('/\s+/', trim(preg_replace('/[^a-z]+/', ' ', mb_strtolower($p)))) ?: [], 0, 2));
+        $since = now()->subMonths(18)->toDateString();
+        $known = [];
+        Transaction::where('date', '>=', $since)->select('account_id', 'payee')->distinct()->get()
+            ->each(function ($t) use (&$known, $payeeKey) {
+                $k = $payeeKey($t->payee);
+                if ($k !== '') {
+                    $known[$t->account_id][$k] = true;
+                }
+            });
+
+        $files = [];
+        $allRows = [];
+        foreach ($data['files'] as $f) {
+            $exact = [];
+            $familiar = [];
+            foreach ($accounts as $id) {
+                $exact[$id] = count(array_filter($this->duplicates($id, $f['rows'])));
+                $familiar[$id] = count(array_filter($f['rows'], fn ($r) => isset($known[$id][$payeeKey($r['payee'])])));
+            }
+            $files[] = ['exact' => $exact, 'familiar' => $familiar];
+            array_push($allRows, ...$f['rows']);
+        }
+
+        return response()->json(['files' => $files, 'new_categories' => $this->newCategories($allRows)]);
+    }
+
+    /** Imports several files, each into its own account. Rows already there are skipped unless asked. */
+    public function batch(Request $request): RedirectResponse
+    {
+        $data = $this->validateFiles($request, true);
+        $ids = [];
+        foreach ($data['files'] as $f) {
+            $account = Account::findOrFail($f['account_id']);
+            $rows = array_values($f['rows']);
+            $skipped = (int) ($f['skipped'] ?? 0);
+            if (! $request->boolean('include_duplicates')) {
+                $dups = $this->duplicates($account->id, $rows);
+                $rows = array_values(array_filter($rows, fn ($r, $i) => ! $dups[$i], ARRAY_FILTER_USE_BOTH));
+                $skipped += count(array_filter($dups));
+            }
+            if (! $rows) {
+                continue;
+            }
+            $ids[] = $this->importInto($account, $f['file_name'], $rows, $skipped, $f['settings'] ?? null)->id;
+        }
+        Transfers::pair();
+
+        $count = $ids ? Import::whereIn('id', $ids)->sum('rows_imported') : 0;
+
+        return redirect()->route('imports.index', $ids ? ['batch' => implode(',', $ids)] : [])
+            ->with('status', $ids ? $count.' transactions imported from '.count($ids).' '.(count($ids) === 1 ? 'file' : 'files').'.' : 'Nothing new to import: every row was already there.');
     }
 
     public function store(Request $request): RedirectResponse
@@ -69,8 +143,18 @@ class ImportController extends Controller
         $data = $this->validateRows($request, true);
         $account = Account::findOrFail($data['account_id']);
 
+        $import = $this->importInto($account, $data['file_name'], $data['rows'], (int) ($data['skipped'] ?? 0), $data['settings'] ?? null);
+        Transfers::pair();
+
+        return redirect()->route('imports.index', ['done' => $import->id])
+            ->with('status', $import->rows_imported.' transactions imported.');
+    }
+
+    private function importInto(Account $account, string $fileName, array $rows, int $skipped, ?array $settings): Import
+    {
         TransferCategories::forget();
-        $import = DB::transaction(function () use ($data, $account) {
+
+        return DB::transaction(function () use ($fileName, $rows, $skipped, $settings, $account) {
             $existing = CategoryPath::existing();
             $created = 0;
             $categoryId = function (?string $text) use (&$existing, &$created): ?int {
@@ -97,12 +181,12 @@ class ImportController extends Controller
                 return $existing[$subKey];
             };
 
-            $dates = array_column($data['rows'], 'date');
+            $dates = array_column($rows, 'date');
             $import = Import::create([
                 'account_id' => $account->id,
-                'file_name' => mb_substr($data['file_name'], 0, 255),
-                'rows_imported' => count($data['rows']),
-                'rows_skipped' => (int) ($data['skipped'] ?? 0),
+                'file_name' => mb_substr($fileName, 0, 255),
+                'rows_imported' => count($rows),
+                'rows_skipped' => $skipped,
                 'first_date' => $dates ? min($dates) : null,
                 'last_date' => $dates ? max($dates) : null,
             ]);
@@ -110,7 +194,7 @@ class ImportController extends Controller
             $now = now();
             $rule = PayeeRule::matcher();
             $insert = [];
-            foreach ($data['rows'] as $r) {
+            foreach ($rows as $r) {
                 $insert[] = [
                     'account_id' => $account->id,
                     'import_id' => $import->id,
@@ -132,16 +216,12 @@ class ImportController extends Controller
             }
 
             $import->update(['categories_created' => $created]);
-            if (! empty($data['settings'])) {
-                $account->update(['import_settings' => $data['settings']]);
+            if (! empty($settings)) {
+                $account->update(['import_settings' => $settings]);
             }
 
             return $import;
         });
-        Transfers::pair();
-
-        return redirect()->route('imports.index', ['done' => $import->id])
-            ->with('status', $import->rows_imported.' transactions imported.');
     }
 
     /** Undo: removes the transactions this import added. Categories stay. */
@@ -195,6 +275,35 @@ class ImportController extends Controller
         return $request->validate($rules, [
             'rows.max' => 'A file can have up to '.self::MAX_ROWS.' rows. Split it into smaller files.',
             'rows.*.date.date_format' => 'Row :position has a date that could not be read.',
+        ]);
+    }
+
+    private function validateFiles(Request $request, bool $full): array
+    {
+        $rules = [
+            'files' => ['required', 'array', 'min:1', 'max:'.self::MAX_FILES],
+            'files.*.rows' => ['required', 'array', 'min:1', 'max:'.self::MAX_ROWS],
+            'files.*.rows.*.date' => ['required', 'date_format:Y-m-d', 'after:1900-01-01', 'before:2100-01-01'],
+            'files.*.rows.*.amount' => ['required', 'integer', 'between:-99999999999,99999999999'],
+            'files.*.rows.*.payee' => ['required', 'string', 'max:500'],
+            'files.*.rows.*.category' => ['nullable', 'string', 'max:250'],
+        ];
+        if ($full) {
+            $rules += [
+                'files.*.account_id' => ['required', 'integer', Rule::exists('accounts', 'id')],
+                'files.*.file_name' => ['required', 'string', 'max:255'],
+                'files.*.skipped' => ['nullable', 'integer', 'min:0'],
+                'files.*.settings' => ['nullable', 'array'],
+                'files.*.rows.*.memo' => ['nullable', 'string', 'max:2000'],
+            ];
+        }
+        $total = array_sum(array_map(fn ($f) => is_array($f['rows'] ?? null) ? count($f['rows']) : 0, (array) $request->input('files', [])));
+        abort_if($total > self::MAX_ROWS * 3, 422, 'That is a lot of rows at once. Import fewer files at a time.');
+
+        return $request->validate($rules, [
+            'files.max' => 'Up to '.self::MAX_FILES.' files at a time.',
+            'files.*.rows.max' => 'A file can have up to '.self::MAX_ROWS.' rows. Split it into smaller files.',
+            'files.*.account_id.required' => 'Pick an account for every file.',
         ]);
     }
 

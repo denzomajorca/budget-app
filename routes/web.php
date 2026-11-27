@@ -10,6 +10,7 @@ use App\Http\Controllers\MonthlyController;
 use App\Http\Controllers\PayeeRuleController;
 use App\Http\Controllers\PlanController;
 use App\Http\Controllers\ReportsController;
+use App\Http\Controllers\RetirementController;
 use App\Http\Controllers\SetupController;
 use App\Http\Controllers\SpendingController;
 use App\Http\Controllers\TransactionController;
@@ -58,9 +59,14 @@ Route::middleware('auth')->group(function () {
     Route::delete('investments/activity/{activity}', [InvestmentController::class, 'destroyActivity'])->name('investments.activity.destroy');
     Route::post('investments/import', [InvestmentController::class, 'import'])->name('investments.import');
     Route::delete('investments/import/{import}', [InvestmentController::class, 'destroyImport'])->name('investments.import.destroy');
+    Route::get('retirement', [RetirementController::class, 'index'])->name('retirement.index');
+    Route::put('retirement', [RetirementController::class, 'update'])->name('retirement.update');
+    Route::delete('retirement', [RetirementController::class, 'reset'])->name('retirement.reset');
     Route::get('import', [ImportController::class, 'index'])->name('imports.index');
     Route::post('import/preview', [ImportController::class, 'preview'])->name('imports.preview');
     Route::post('import', [ImportController::class, 'store'])->name('imports.store');
+    Route::post('import/match', [ImportController::class, 'match'])->name('imports.match');
+    Route::post('import/batch', [ImportController::class, 'batch'])->name('imports.batch');
     Route::delete('import/{import}', [ImportController::class, 'destroy'])->name('imports.destroy');
 });
 

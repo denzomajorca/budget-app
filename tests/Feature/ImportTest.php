@@ -129,4 +129,56 @@ class ImportTest extends TestCase
     {
         $this->get('/import')->assertOk();
     }
+
+    public function test_match_finds_the_account_that_already_has_the_rows()
+    {
+        $checking = Account::create(['name' => 'TFCU Checking', 'type' => 'checking']);
+        $this->post('/import', ['account_id' => $this->card->id, 'file_name' => 'a.csv', 'rows' => $this->rows()]);
+        Transaction::create(['account_id' => $checking->id, 'date' => '2025-09-01', 'payee' => 'Employer Payroll 1234', 'amount' => 100000]);
+
+        $res = $this->postJson('/import/match', ['files' => [
+            ['rows' => array_slice($this->rows(), 0, 4)],
+            ['rows' => [['date' => '2025-11-01', 'amount' => 100000, 'payee' => 'EMPLOYER PAYROLL 9876']]],
+        ]])->assertOk()->json();
+
+        $this->assertSame(4, $res['files'][0]['exact'][$this->card->id]);
+        $this->assertSame(0, $res['files'][0]['exact'][$checking->id]);
+        $this->assertSame(0, $res['files'][1]['exact'][$checking->id]);
+        $this->assertSame(1, $res['files'][1]['familiar'][$checking->id], 'payees are compared without numbers or case');
+        $this->assertSame(0, $res['files'][1]['familiar'][$this->card->id]);
+    }
+
+    public function test_batch_imports_each_file_into_its_account_and_skips_rows_already_there()
+    {
+        $checking = Account::create(['name' => 'TFCU Checking', 'type' => 'checking']);
+        $this->post('/import', ['account_id' => $this->card->id, 'file_name' => 'a.csv', 'rows' => array_slice($this->rows(), 0, 2)]);
+
+        $this->post('/import/batch', ['files' => [
+            ['account_id' => $this->card->id, 'file_name' => 'card.csv', 'rows' => $this->rows()],
+            ['account_id' => $checking->id, 'file_name' => 'checking.csv', 'rows' => [
+                ['date' => '2025-10-20', 'amount' => -50000, 'payee' => 'Chase payment', 'category' => 'Transfer:Credit Card Payment'],
+            ]],
+            ['account_id' => $checking->id, 'file_name' => 'old.csv', 'rows' => [
+                ['date' => '2025-10-20', 'amount' => -50000, 'payee' => 'Chase payment', 'category' => 'Transfer:Credit Card Payment'],
+            ]],
+        ]])->assertRedirect()->assertSessionHasNoErrors();
+
+        $this->assertSame(6, Transaction::where('account_id', $this->card->id)->count(), 'the two rows already there were skipped');
+        $this->assertSame(1, Transaction::where('account_id', $checking->id)->count(), 'a second file with the same rows adds nothing');
+        $card = Import::where('file_name', 'card.csv')->first();
+        $this->assertSame(4, $card->rows_imported);
+        $this->assertSame(2, $card->rows_skipped);
+        $this->assertNull(Import::where('file_name', 'old.csv')->first());
+
+        $page = $this->get('/import?batch='.Import::where('file_name', 'card.csv')->value('id').','.Import::where('file_name', 'checking.csv')->value('id'))
+            ->assertOk()->viewData('page')['props'];
+        $this->assertCount(2, $page['batch']);
+    }
+
+    public function test_batch_needs_an_account_for_every_file()
+    {
+        $this->post('/import/batch', ['files' => [['file_name' => 'x.csv', 'rows' => $this->rows()]]])
+            ->assertSessionHasErrors('files.0.account_id');
+        $this->assertSame(0, Transaction::count());
+    }
 }
