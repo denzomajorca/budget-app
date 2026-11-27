@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Models\Account;
+use App\Models\InvestmentAccount;
 use App\Models\Transaction;
 use App\Support\BudgetMonth;
 use Inertia\Inertia;
@@ -45,7 +46,8 @@ class DashboardController extends Controller
         return Inertia::render('Dashboard', [
             'budget' => ['budgeted' => $budget['totals']['budget'], 'spent' => $budget['totals']['spent'], 'over' => array_slice($over, 0, 3)],
             'accounts' => $accounts,
-            'netWorth' => $accounts->sum('balance'),
+            'investments' => $investments = InvestmentAccount::totalValue(),
+            'netWorth' => $accounts->sum('balance') + $investments,
             'spentThisMonth' => -$spentThisMonth,
             'monthStart' => $monthStart,
             'recentTransactions' => $recent,
