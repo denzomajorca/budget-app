@@ -296,23 +296,28 @@ function totalTyped() {
     holdForm.value.rows.forEach(pctTyped);
 }
 const pctSum = computed(() => holdForm.value.rows.reduce((s, r) => s + toNum(r.pct), 0));
+const holdRowsFor = (id: number | null) => {
+    const cur = props.holdings.accounts.find((a) => a.id === id);
+    return cur
+        ? cur.rows.map((r) => ({ name: r.name, pct: '', value: (r.value / 100).toFixed(2) }))
+        : [
+              { name: '', pct: '', value: '' },
+              { name: '', pct: '', value: '' },
+          ];
+};
 function typeHoldings() {
     holdErr.value = '';
     const id = props.filters.account ?? props.accounts[0]?.id ?? null;
-    const cur = props.holdings.accounts.find((a) => a.id === id);
-    holdForm.value = {
-        account_id: id,
-        as_of: today(),
-        total: '',
-        rows: cur
-            ? cur.rows.map((r) => ({ name: r.name, pct: '', value: (r.value / 100).toFixed(2) }))
-            : [
-                  { name: '', pct: '', value: '' },
-                  { name: '', pct: '', value: '' },
-              ],
-    };
+    holdForm.value = { account_id: id, as_of: today(), total: '', rows: holdRowsFor(id) };
     holdOpen.value = true;
 }
+// Picking another account starts from that account's own funds.
+watch(
+    () => holdForm.value.account_id,
+    (id, old) => {
+        if (holdOpen.value && old !== null && id !== old) holdForm.value.rows = holdRowsFor(id);
+    },
+);
 const holdTotal = computed(() => holdForm.value.rows.reduce((s, r) => s + toNum(r.value), 0));
 function saveHoldings() {
     const rows = holdForm.value.rows.map((r) => ({ name: r.name.trim(), value: Math.round(toNum(r.value) * 100) })).filter((r) => r.name && r.value);
