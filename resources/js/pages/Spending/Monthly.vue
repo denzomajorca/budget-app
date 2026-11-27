@@ -4,7 +4,6 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import AppLayout from '@/layouts/AppLayout.vue';
-import { money } from '@/lib/money';
 import { Head, Link, router } from '@inertiajs/vue3';
 import { ChevronDown, ChevronRight } from 'lucide-vue-next';
 import { computed, reactive, ref } from 'vue';
@@ -82,7 +81,9 @@ const multiYear = computed(() => new Set(props.months.map((m) => m.year)).size >
 function txLink(filter: string, m?: Month) {
     return route('transactions.index', { category: filter, from: m ? m.from : props.range.from, to: m ? m.to : props.range.to });
 }
-const cell = (v: number) => (v === 0 ? '–' : money(v));
+// Whole dollars keep the grid readable; the transactions page shows the cents.
+const dollars = new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0, minimumFractionDigits: 0 });
+const cell = (v: number) => (v === 0 ? '–' : dollars.format(v / 100));
 </script>
 
 <template>
@@ -121,7 +122,7 @@ const cell = (v: number) => (v === 0 ? '–' : money(v));
             </Card>
 
             <Card class="overflow-hidden">
-                <div class="overflow-x-auto">
+                <div class="w-0 min-w-full overflow-x-auto">
                     <table class="w-full border-separate border-spacing-0 text-sm tabular-nums">
                         <thead class="text-muted-foreground">
                             <tr>
