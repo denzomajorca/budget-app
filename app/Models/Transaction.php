@@ -10,7 +10,7 @@ class Transaction extends Model
 {
     use HasFactory;
 
-    protected $fillable = ['account_id', 'date', 'payee', 'amount', 'category_id', 'memo', 'import_id', 'transfer_id', 'needs_review'];
+    protected $fillable = ['account_id', 'date', 'payee', 'amount', 'category_id', 'memo', 'import_id', 'transfer_id', 'transfer_outside', 'needs_review'];
 
     protected function casts(): array
     {
@@ -18,6 +18,7 @@ class Transaction extends Model
             'date' => 'date:Y-m-d',
             'amount' => 'integer',
             'needs_review' => 'boolean',
+            'transfer_outside' => 'boolean',
         ];
     }
 

@@ -73,7 +73,7 @@ class Transfers
             return 0;
         }
 
-        $open = Transaction::whereNull('transfer_id')
+        $open = Transaction::whereNull('transfer_id')->where('transfer_outside', false)
             ->where('amount', '!=', 0)
             ->where(fn ($q) => $q->whereNull('category_id')->orWhereIn('category_id', $transferIds))
             ->orderBy('date')->orderBy('id')
@@ -126,10 +126,42 @@ class Transfers
         return count($pairs);
     }
 
+    /** Days apart a suggested match may be, when you pair by hand. */
+    public const SUGGEST_DAYS = 10;
+
+    /**
+     * The most likely other side of an unpaired transfer, from any account
+     * and any category: the opposite amount, closest date first.
+     */
+    public static function suggestion(Transaction $t): ?Transaction
+    {
+        return Transaction::with(['account:id,name', 'category.parent'])
+            ->where('account_id', '!=', $t->account_id)
+            ->where('amount', -$t->amount)
+            ->whereNull('transfer_id')
+            ->whereBetween('date', [$t->date->copy()->subDays(self::SUGGEST_DAYS)->format('Y-m-d'), $t->date->copy()->addDays(self::SUGGEST_DAYS)->format('Y-m-d')])
+            ->get()
+            ->sortBy(fn (Transaction $c) => abs($c->date->diffInDays($t->date)))
+            ->first();
+    }
+
+    /** Link two transactions as one transfer. The other side takes this one's category if it isn't a transfer yet. */
+    public static function link(Transaction $a, Transaction $b): void
+    {
+        DB::transaction(function () use ($a, $b) {
+            $a->update(['transfer_id' => $b->id, 'transfer_outside' => false]);
+            $bUpdate = ['transfer_id' => $a->id, 'transfer_outside' => false];
+            if ($b->category?->kind !== 'transfer') {
+                $bUpdate['category_id'] = $a->category_id;
+            }
+            $b->update($bUpdate);
+        });
+    }
+
     /** Transactions in a Transfer category with no matching other side. */
     public static function unpairedCount(): int
     {
-        return Transaction::whereNull('transfer_id')
+        return Transaction::whereNull('transfer_id')->where('transfer_outside', false)
             ->whereHas('category', fn ($q) => $q->where('kind', 'transfer'))
             ->count();
     }

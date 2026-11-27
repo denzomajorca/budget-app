@@ -117,4 +117,35 @@ class TransferTest extends TestCase
         $this->assertSame('income', $pay->fresh()->kind);
         $this->assertNotNull(Transaction::where('payee', 'Pay card')->value('transfer_id'));
     }
+
+    public function test_unpaired_list_suggests_a_match_you_can_pair_and_outside_accounts_drop_out()
+    {
+        $savings = Account::create(['name' => 'CHASE Savings', 'type' => 'savings']);
+        $sav = Category::create(['name' => 'Savings', 'kind' => 'transfer']);
+        $interest = Category::where('name', 'Interest')->first();
+        // Other side 8 days later and filed as income, so automatic pairing skips it.
+        $out = Transaction::create(['account_id' => $this->checking->id, 'date' => '2025-12-29', 'payee' => 'Transfer To Sav 12/29', 'amount' => -30000, 'category_id' => $sav->id]);
+        $in = Transaction::create(['account_id' => $savings->id, 'date' => '2026-01-06', 'payee' => 'Transfer From Chk', 'amount' => 30000, 'category_id' => $interest->id]);
+        $amex = Transaction::create(['account_id' => $this->checking->id, 'date' => '2026-10-01', 'payee' => 'American Express', 'amount' => -145089, 'category_id' => $sav->id]);
+        $this->assertSame(0, Transfers::pair());
+
+        $this->get('/transactions?transfers=unpaired')->assertInertia(fn ($p) => $p
+            ->where('unpaired_transfers', 2)
+            ->where('transactions.data.1.match.id', $in->id)
+            ->where('transactions.data.1.match.account', 'CHASE Savings')
+            ->where('transactions.data.0.match', null));
+
+        $this->post('/transactions/'.$out->id.'/pair', ['other_id' => $in->id])->assertSessionHasNoErrors();
+        $this->assertSame($in->id, $out->fresh()->transfer_id);
+        $this->assertSame($sav->id, $in->fresh()->category_id, 'the other side becomes a transfer too');
+
+        // Can't pair the same amount in the same direction.
+        $this->post('/transactions/'.$amex->id.'/pair', ['other_id' => $out->id])->assertSessionHasErrors('other_id');
+
+        $this->post('/transactions/bulk', ['all' => true, 'filters' => ['transfers' => 'unpaired', 'q' => 'american express'], 'action' => 'outside'])
+            ->assertSessionHasNoErrors();
+        $this->assertTrue($amex->fresh()->transfer_outside);
+        $this->assertSame(0, Transfers::unpairedCount());
+        $this->get('/transactions?transfers=unpaired')->assertInertia(fn ($p) => $p->where('totals.count', 0));
+    }
 }

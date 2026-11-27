@@ -18,6 +18,8 @@ interface Row extends Txn {
     is_transfer: boolean;
     transfer: string | null;
     needs_review: boolean;
+    transfer_outside: boolean;
+    match: { id: number; date: string; payee: string; amount: number; account: string | null; category: string | null } | null;
 }
 interface Filters {
     account: string | number | null;
@@ -60,6 +62,7 @@ const f = reactive({
 });
 function categoryText(t: Row) {
     if (t.transfer) return 'Transfer: ' + t.transfer;
+    if (t.is_transfer && t.transfer_outside) return (t.category ?? 'Transfer') + ' (account outside the app)';
     if (t.is_transfer) return (t.category ?? 'Transfer') + ' (no match found)';
     return t.category ?? 'Uncategorized';
 }
@@ -122,6 +125,17 @@ function setCategoryOnTicked() {
 }
 function markTickedReviewed() {
     if (selected.value.length) bulk({ ids: selected.value, action: 'reviewed' });
+}
+function markTickedOutside() {
+    if (selected.value.length) bulk({ ids: selected.value, action: 'outside' });
+}
+function markAllShownOutside() {
+    bulk({ all: true, filters: { ...f }, action: 'outside' });
+}
+function pairWith(t: Row) {
+    if (!t.match) return;
+    busy.value = true;
+    router.post(route('transactions.pair', t.id), { other_id: t.match.id }, { preserveScroll: true, onFinish: () => (busy.value = false) });
 }
 function markAllShownReviewed() {
     bulk({ all: true, filters: { ...f }, action: 'reviewed' });
@@ -236,11 +250,21 @@ const pageLinks = computed(() => props.transactions.links.map((l) => ({ ...l, la
                 </CardContent>
             </Card>
 
-            <p v-if="f.transfers" class="text-sm">
-                Showing transfers with no matching other side. Usually the other account isn't imported yet, or one side is in a spending category.
-                Fix it by giving both sides a Transfer category.
-                <button type="button" class="underline" @click="((f.transfers = ''), apply())">Show all</button>
-            </p>
+            <Card v-if="f.transfers">
+                <CardContent class="grid gap-2 p-4 text-sm">
+                    <p>
+                        These transfers have no other side yet. Where the app spots a likely match in another account, press <b>Pair</b>. If the money
+                        went to or came from an account you don't track here (like a card that isn't in the app), mark it <b>Outside the app</b>.
+                    </p>
+                    <div class="flex flex-wrap gap-2">
+                        <Button v-if="transactions.total" size="sm" variant="outline" :disabled="busy" @click="markAllShownOutside">
+                            Mark all {{ transactions.total }} shown as outside the app
+                        </Button>
+                        <Button size="sm" variant="ghost" @click="((f.transfers = ''), apply())">Show all transactions</Button>
+                    </div>
+                    <p class="text-xs text-muted-foreground">Tip: search a payee first, like "american express", to mark just those.</p>
+                </CardContent>
+            </Card>
             <p v-else-if="unpaired_transfers" class="text-sm text-muted-foreground">
                 {{ unpaired_transfers }} {{ unpaired_transfers === 1 ? 'transfer has' : 'transfers have' }} no matching other side.
                 <button type="button" class="underline" @click="((f.transfers = 'unpaired'), apply())">Review them</button>
@@ -282,6 +306,7 @@ const pageLinks = computed(() => props.transactions.links.map((l) => ({ ...l, la
                     <Button size="sm" variant="outline" :disabled="busy" @click="markTickedReviewed"
                         ><CheckCheck class="size-4" />Mark reviewed</Button
                     >
+                    <Button v-if="f.transfers" size="sm" variant="outline" :disabled="busy" @click="markTickedOutside">Outside the app</Button>
                     <Button size="sm" variant="ghost" @click="selected = []">Clear</Button>
                 </div>
                 <!-- Phones: a simple list -->
@@ -318,6 +343,25 @@ const pageLinks = computed(() => props.transactions.links.map((l) => ({ ...l, la
                                         {{ money(t.amount) }}
                                     </div>
                                 </button>
+                                <div v-if="f.transfers && !t.transfer" class="flex flex-wrap items-center gap-2 px-3 pb-3 text-xs" @click.stop>
+                                    <template v-if="t.match">
+                                        <span class="text-muted-foreground"
+                                            >Possible match: {{ t.match.account }}, {{ shortDate(t.match.date) }}, {{ t.match.payee }},
+                                            {{ money(t.match.amount) }}<template v-if="t.match.category"> ({{ t.match.category }})</template></span
+                                        >
+                                        <Button size="sm" class="h-7 px-2 text-xs" :disabled="busy" @click="pairWith(t)">Pair</Button>
+                                    </template>
+                                    <span v-else class="text-muted-foreground">No same amount in your other accounts within 10 days.</span>
+                                    <Button
+                                        v-if="!t.transfer_outside"
+                                        size="sm"
+                                        variant="outline"
+                                        class="h-7 px-2 text-xs"
+                                        :disabled="busy"
+                                        @click="bulk({ ids: [t.id], action: 'outside' })"
+                                        >Outside the app</Button
+                                    >
+                                </div>
                                 <div v-if="(t.needs_review || !t.category_id) && !t.transfer" class="px-3 pb-3">
                                     <NativeSelect
                                         class="h-9 py-0"
@@ -388,6 +432,26 @@ const pageLinks = computed(() => props.transactions.links.map((l) => ({ ...l, la
                                         >
                                     </div>
                                     <div v-if="t.memo" class="text-xs text-muted-foreground">{{ t.memo }}</div>
+                                    <div v-if="f.transfers && !t.transfer" class="mt-1 flex flex-wrap items-center gap-2 text-xs" @click.stop>
+                                        <template v-if="t.match">
+                                            <span class="text-muted-foreground"
+                                                >Possible match: {{ t.match.account }}, {{ shortDate(t.match.date) }}, {{ t.match.payee }},
+                                                {{ money(t.match.amount)
+                                                }}<template v-if="t.match.category"> ({{ t.match.category }})</template></span
+                                            >
+                                            <Button size="sm" class="h-7 px-2 text-xs" :disabled="busy" @click="pairWith(t)">Pair</Button>
+                                        </template>
+                                        <span v-else class="text-muted-foreground">No same amount in your other accounts within 10 days.</span>
+                                        <Button
+                                            v-if="!t.transfer_outside"
+                                            size="sm"
+                                            variant="outline"
+                                            class="h-7 px-2 text-xs"
+                                            :disabled="busy"
+                                            @click="bulk({ ids: [t.id], action: 'outside' })"
+                                            >Outside the app</Button
+                                        >
+                                    </div>
                                 </td>
                                 <td class="px-4 py-2" @click.stop>
                                     <div v-if="t.transfer" class="text-muted-foreground" @click="edit(t)">{{ categoryText(t) }}</div>
