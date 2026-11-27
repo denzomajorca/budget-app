@@ -34,11 +34,12 @@ class InvestmentReport
     private ?Carbon $from;
 
     /** @param Collection<int, InvestmentAccount> $accounts with balances and activities loaded */
-    public function __construct(Collection $accounts, private string $tf, ?Carbon $today = null)
+    /** With $from given, the timeframe runs from that date (e.g. a calendar year in Reports). */
+    public function __construct(Collection $accounts, private string $tf, ?Carbon $today = null, ?Carbon $from = null)
     {
         $this->accounts = $accounts;
         $this->today = ($today ?? now())->copy()->startOfDay();
-        $this->from = self::fromDate($tf, $this->today);
+        $this->from = $from ? $from->copy()->startOfDay() : self::fromDate($tf, $this->today);
     }
 
     public static function fromDate(string $tf, Carbon $today): ?Carbon
@@ -53,7 +54,7 @@ class InvestmentReport
 
     public function timeframe(): array
     {
-        return ['key' => $this->tf, 'label' => self::TIMEFRAMES[$this->tf], 'from' => $this->from?->toDateString(), 'to' => $this->today->toDateString()];
+        return ['key' => $this->tf, 'label' => self::TIMEFRAMES[$this->tf] ?? 'Custom', 'from' => $this->from?->toDateString(), 'to' => $this->today->toDateString()];
     }
 
     /** Money in or out of one account, newest balance first is not assumed. */
@@ -172,7 +173,13 @@ class InvestmentReport
     }
 
     /** Estimated value on a date: the last balance before it plus money added since. */
-    private function valueOn(InvestmentAccount $a, Carbon $d): ?int
+    /** Estimated value of all accounts on a date (0 for accounts with no balance yet). */
+    public function totalOn(Carbon $d): int
+    {
+        return (int) $this->accounts->sum(fn ($a) => $this->valueOn($a, $d) ?? 0);
+    }
+
+    public function valueOn(InvestmentAccount $a, Carbon $d): ?int
     {
         $b = $this->balancesOf($a)->filter(fn ($x) => $x->date->lte($d))->last();
 
