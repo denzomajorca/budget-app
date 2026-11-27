@@ -33,6 +33,7 @@ Route::middleware('auth')->group(function () {
     Route::get('budgets', [BudgetController::class, 'index'])->name('budgets.index');
     Route::put('budgets', [BudgetController::class, 'update'])->name('budgets.update');
     Route::post('budgets/fill', [BudgetController::class, 'fillFromAverages'])->name('budgets.fill');
+    Route::post('budgets/layout', [BudgetController::class, 'layout'])->name('budgets.layout');
     Route::get('plan', [PlanController::class, 'index'])->name('plan.index');
     Route::post('plan', [PlanController::class, 'store'])->name('plan.store');
     Route::put('plan/{item}', [PlanController::class, 'update'])->name('plan.update');

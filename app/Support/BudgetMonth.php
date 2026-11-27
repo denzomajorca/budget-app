@@ -53,10 +53,11 @@ class BudgetMonth
         foreach ($mains as $main) {
             $rows = [];
             foreach ($main->children as $sub) {
-                $rows[] = $this->row($sub->id, $sub->name, $budgets, $spent, $avg($sub->id));
+                $rows[] = $this->row($sub->id, $sub->name, $budgets, $spent, $avg($sub->id)) + $this->layout($sub, $main->name);
             }
             $own = $this->row($main->id, $main->children->isEmpty() ? $main->name : 'Other '.$main->name, $budgets, $spent, $avg($main->id));
             $own['is_main'] = true;
+            $own += $this->layout($main, $main->children->isEmpty() ? null : $main->name);
             // A main category with subcategories only shows its own row when it is used.
             if ($main->children->isEmpty() || $own['budget'] !== null || $own['spent'] !== 0 || $own['average'] !== 0) {
                 $rows[] = $own;
@@ -80,7 +81,23 @@ class BudgetMonth
         $uncategorized = -(int) Transaction::whereNull('category_id')->where('amount', '<', 0)
             ->whereDate('date', '>=', $this->start->toDateString())->whereDate('date', '<=', $this->end->toDateString())->sum('amount');
 
-        return ['groups' => $groups, 'totals' => $tot + ['uncategorized' => $uncategorized]];
+        // One flat list for the page: subcategories, and main categories that have none, in your order.
+        $lines = [];
+        foreach ($groups as $g) {
+            foreach ($g['rows'] as $r) {
+                $lines[] = $r;
+            }
+        }
+        $natural = array_flip(array_column($lines, 'category_id'));
+        usort($lines, fn ($a, $b) => [$a['position'] ?? PHP_INT_MAX, $natural[$a['category_id']]] <=> [$b['position'] ?? PHP_INT_MAX, $natural[$b['category_id']]]);
+
+        return ['groups' => $groups, 'lines' => $lines, 'totals' => $tot + ['uncategorized' => $uncategorized]];
+    }
+
+    /** @return array{parent:?string,hidden:?bool,position:?int} */
+    private function layout(Category $c, ?string $parent): array
+    {
+        return ['parent' => $parent, 'hidden' => $c->budget_hidden, 'position' => $c->budget_position];
     }
 
     private function row(int $id, string $name, array $budgets, array $spent, int $average): array

@@ -9,6 +9,7 @@ use App\Support\BudgetMonth;
 use App\Support\Money;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\Rule;
 use Inertia\Inertia;
 use Inertia\Response;
@@ -47,6 +48,30 @@ class BudgetController extends Controller
         } else {
             Budget::updateOrCreate(['category_id' => $category->id], ['amount' => abs(Money::toCents((string) $data['amount']))]);
         }
+
+        return back();
+    }
+
+    /**
+     * Saves how the list looks: `order` is every line's category id from top
+     * to bottom; `hidden` sets one line shown (false) or hidden (true).
+     */
+    public function layout(Request $request): RedirectResponse
+    {
+        $data = $request->validate([
+            'order' => ['nullable', 'array', 'max:1000'],
+            'order.*' => ['integer'],
+            'hidden' => ['nullable', 'array', 'max:1000'],
+            'hidden.*' => ['boolean'],
+        ]);
+        DB::transaction(function () use ($data) {
+            foreach (array_values($data['order'] ?? []) as $i => $id) {
+                Category::whereKey($id)->update(['budget_position' => $i + 1]);
+            }
+            foreach ($data['hidden'] ?? [] as $id => $hidden) {
+                Category::whereKey((int) $id)->update(['budget_hidden' => (bool) $hidden]);
+            }
+        });
 
         return back();
     }

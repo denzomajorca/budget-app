@@ -16,7 +16,12 @@ class Category extends Model
     /** Income first, then spending, then transfers. */
     public const KIND_ORDER = "case kind when 'income' then 0 when 'expense' then 1 else 2 end";
 
-    protected $fillable = ['parent_id', 'name', 'kind'];
+    protected $fillable = ['parent_id', 'name', 'kind', 'budget_hidden', 'budget_position'];
+
+    protected function casts(): array
+    {
+        return ['budget_hidden' => 'boolean', 'budget_position' => 'integer'];
+    }
 
     public function parent(): BelongsTo
     {
