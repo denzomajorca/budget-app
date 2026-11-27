@@ -84,7 +84,9 @@ function sortBy(k: SortKey) {
         sortDir.value = 'asc';
         return;
     }
-    sortDir.value = sortKey.value === k && sortDir.value === 'asc' ? 'desc' : 'asc';
+    // Names start A–Z; amounts start with the biggest. Clicking again flips it.
+    const first = k === 'name' || k === 'left' ? 'asc' : 'desc';
+    sortDir.value = sortKey.value === k ? (sortDir.value === 'asc' ? 'desc' : 'asc') : first;
     sortKey.value = k;
 }
 const lineLabel = (l: Line) => (l.parent ? `${l.name} (${l.parent})` : l.name);
@@ -113,7 +115,11 @@ const ordered = computed(() => {
     });
 });
 const editing = ref(false);
-const shownLines = computed(() => (editing.value ? ordered.value : ordered.value.filter(isShown)));
+// While arranging: shown lines first (in your order), then the hidden ones.
+const shownLines = computed(() =>
+    editing.value ? [...ordered.value.filter(isShown), ...ordered.value.filter((l) => !isShown(l))] : ordered.value.filter(isShown),
+);
+const firstHidden = computed(() => (editing.value ? shownLines.value.findIndex((l) => !isShown(l)) : -1));
 const shownTotals = computed(() => {
     const ls = ordered.value.filter(isShown);
     return { budget: ls.reduce((s, l) => s + (l.budget ?? 0), 0), spent: ls.reduce((s, l) => s + l.spent, 0), count: ls.length };
@@ -123,13 +129,20 @@ function saveLayout(payload: { order?: number[]; hidden?: Record<number, boolean
     router.post(route('budgets.layout'), payload, { preserveScroll: true, preserveState: true });
 }
 function toggleShown(l: Line) {
-    saveLayout({ hidden: { [l.category_id]: isShown(l) } });
+    const hide = isShown(l);
+    // The line goes to the boundary: last of the shown lines, or first of the hidden ones.
+    const others = shownLines.value.filter((x) => x.category_id !== l.category_id);
+    const ids = [...others.filter(isShown), l, ...others.filter((x) => !isShown(x))].map((x) => x.category_id);
+    order.value = ids;
+    saveLayout({ hidden: { [l.category_id]: hide }, order: ids });
 }
+/** Move a shown line among the shown lines. */
 function move(l: Line, by: number) {
-    const ids = [...order.value];
+    const ids = shownLines.value.map((x) => x.category_id);
     const i = ids.indexOf(l.category_id);
     const j = i + by;
-    if (j < 0 || j >= ids.length) return;
+    const lastShown = firstHidden.value === -1 ? ids.length - 1 : firstHidden.value - 1;
+    if (j < 0 || j > lastShown) return;
     [ids[i], ids[j]] = [ids[j], ids[i]];
     order.value = ids;
     saveLayout({ order: ids });
@@ -155,7 +168,7 @@ watch([editing, listEl], async () => {
         ghostClass: 'opacity-40',
         onEnd: (e) => {
             if (e.oldIndex === undefined || e.newIndex === undefined || e.oldIndex === e.newIndex) return;
-            const ids = [...order.value];
+            const ids = shownLines.value.map((x) => x.category_id);
             const [moved] = ids.splice(e.oldIndex, 1);
             ids.splice(e.newIndex, 0, moved);
             // Let Vue redraw the list from the new order rather than keep Sortable's DOM move.
@@ -275,7 +288,7 @@ const txLink = (categoryId: number) => route('transactions.index', { category: c
             </div>
 
             <p v-if="editing" class="rounded-md border bg-muted/40 p-3 text-sm">
-                Tick the lines you want to see. Drag
+                Tick the lines you want to see; hidden ones wait at the bottom. Drag
                 <GripVertical class="inline size-4 align-text-bottom" /> to move a line, or use the arrows. Changes save as you go. Hidden lines still
                 count in the totals at the top.
             </p>
@@ -321,7 +334,7 @@ const txLink = (categoryId: number) => route('transactions.index', { category: c
                     Sorted by {{ sortKey }}.
                     <button type="button" class="underline" @click="sortBy('mine')">Back to my order</button>
                 </div>
-                <ul ref="listEl" class="divide-y">
+                <ul ref="listEl" class="divide-y" data-budget-lines>
                     <li
                         v-for="(r, i) in shownLines"
                         :key="r.category_id"
@@ -331,6 +344,7 @@ const txLink = (categoryId: number) => route('transactions.index', { category: c
                                 ? 'grid-cols-[4.5rem_1fr] sm:grid-cols-[4.5rem_1fr_7rem_7rem_7rem]'
                                 : 'grid-cols-[1fr_6.5rem] sm:grid-cols-[1fr_7rem_7rem_7rem]',
                             editing && !isShown(r) ? 'opacity-50' : '',
+                            i === firstHidden && i > 0 ? 'border-t-4 border-t-muted' : '',
                         ]"
                     >
                         <div v-if="editing" class="flex items-center gap-1">
@@ -355,7 +369,7 @@ const txLink = (categoryId: number) => route('transactions.index', { category: c
                                         size="icon"
                                         variant="ghost"
                                         class="size-7"
-                                        :disabled="i === 0"
+                                        :disabled="!isShown(r) || i === 0"
                                         :aria-label="'Move ' + r.name + ' up'"
                                         @click="move(r, -1)"
                                         ><ChevronUp class="size-4"
@@ -364,7 +378,7 @@ const txLink = (categoryId: number) => route('transactions.index', { category: c
                                         size="icon"
                                         variant="ghost"
                                         class="size-7"
-                                        :disabled="i === shownLines.length - 1"
+                                        :disabled="!isShown(r) || i === shownLines.length - 1 || i + 1 === firstHidden"
                                         :aria-label="'Move ' + r.name + ' down'"
                                         @click="move(r, 1)"
                                         ><ChevronDown class="size-4"
