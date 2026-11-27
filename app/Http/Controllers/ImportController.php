@@ -8,6 +8,7 @@ use App\Models\Import;
 use App\Models\PayeeRule;
 use App\Models\Transaction;
 use App\Support\CategoryPath;
+use App\Support\TransferCategories;
 use App\Support\Transfers;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
@@ -48,7 +49,7 @@ class ImportController extends Controller
         $new = [];
         foreach ($data['rows'] as $r) {
             $path = CategoryPath::split($r['category'] ?? null);
-            if (! $path) {
+            if (! $path || TransferCategories::isMapped($r['payee'] ?? null, $r['category'] ?? null)) {
                 continue;
             }
             [$main, $sub] = $path;
@@ -68,6 +69,7 @@ class ImportController extends Controller
         $data = $this->validateRows($request, true);
         $account = Account::findOrFail($data['account_id']);
 
+        TransferCategories::forget();
         $import = DB::transaction(function () use ($data, $account) {
             $existing = CategoryPath::existing();
             $created = 0;
@@ -116,7 +118,9 @@ class ImportController extends Controller
                     'payee' => mb_substr(trim($r['payee']), 0, 255),
                     'amount' => (int) $r['amount'],
                     // A rule you saved wins over the bank file's category.
-                    'category_id' => $rule($r['payee']) ?? $categoryId($r['category'] ?? null),
+                    'category_id' => $rule($r['payee'])
+                        ?? TransferCategories::forImportRow($r['payee'], $r['category'] ?? null, $account)
+                        ?? $categoryId($r['category'] ?? null),
                     'needs_review' => true,
                     'memo' => filled($r['memo'] ?? null) ? mb_substr(trim($r['memo']), 0, 1000) : null,
                     'created_at' => $now,

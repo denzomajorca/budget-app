@@ -7,6 +7,7 @@ use App\Models\Category;
 use App\Models\PayeeRule;
 use App\Models\Transaction;
 use App\Models\User;
+use App\Support\TransferCategories;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
 
@@ -19,6 +20,7 @@ class ReviewTest extends TestCase
     protected function setUp(): void
     {
         parent::setUp();
+        TransferCategories::forget();
         $this->actingAs(User::factory()->create());
         $this->card = Account::create(['name' => 'CHASE Saphire', 'type' => 'credit_card']);
     }

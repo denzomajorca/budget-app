@@ -7,6 +7,7 @@ use App\Models\Category;
 use App\Models\Transaction;
 use App\Models\User;
 use App\Support\CategoryPath;
+use App\Support\TransferCategories;
 use App\Support\Transfers;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Artisan;
@@ -23,6 +24,7 @@ class TransferTest extends TestCase
     protected function setUp(): void
     {
         parent::setUp();
+        TransferCategories::forget();
         $this->actingAs(User::factory()->create());
         $this->checking = Account::create(['name' => 'CHASE Checking', 'type' => 'checking']);
         $this->card = Account::create(['name' => 'CHASE Saphire', 'type' => 'credit_card']);
@@ -50,7 +52,7 @@ class TransferTest extends TestCase
             ['date' => '2026-10-04', 'amount' => -7000, 'payee' => 'Delta', 'category' => 'Travel', 'memo' => null],
         ]])->assertSessionHasNoErrors();
 
-        $this->assertSame('transfer', Category::whereNull('parent_id')->where('name', 'Credit Cards')->value('kind'));
+        $this->assertSame('Transfer › Credit Card Payment', Transaction::where('payee', 'Chase card payment')->first()->category->label());
         $out = Transaction::where('payee', 'Chase card payment')->first();
         $in = Transaction::where('payee', 'Payment thank you')->first();
         $this->assertSame($in->id, $out->transfer_id);
