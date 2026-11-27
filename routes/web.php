@@ -5,6 +5,7 @@ use App\Http\Controllers\BudgetController;
 use App\Http\Controllers\CategoryController;
 use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\ImportController;
+use App\Http\Controllers\MonthlyController;
 use App\Http\Controllers\PayeeRuleController;
 use App\Http\Controllers\PlanController;
 use App\Http\Controllers\SetupController;
@@ -28,6 +29,7 @@ Route::middleware('auth')->group(function () {
     Route::resource('transactions', TransactionController::class)->only(['index', 'store', 'update', 'destroy']);
     Route::post('accounts/{account}/balance', [AccountController::class, 'setBalance'])->name('accounts.balance');
     Route::get('spending', SpendingController::class)->name('spending');
+    Route::get('spending/monthly', MonthlyController::class)->name('spending.monthly');
     Route::get('budgets', [BudgetController::class, 'index'])->name('budgets.index');
     Route::put('budgets', [BudgetController::class, 'update'])->name('budgets.update');
     Route::post('budgets/fill', [BudgetController::class, 'fillFromAverages'])->name('budgets.fill');
