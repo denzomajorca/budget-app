@@ -61,6 +61,7 @@ function startEdit(c: Sub, parentId: number | null, kind: string, childCount = 0
     form.kind = kind;
     open.value = true;
 }
+const groupTitle: Record<string, string> = { income: 'Income', expense: 'Spending', transfer: 'Transfers between your accounts' };
 function save() {
     const opts = { preserveScroll: true, onSuccess: () => (open.value = false) };
     if (editing.value) form.put(route('categories.update', editing.value.id), opts);
@@ -86,32 +87,46 @@ function destroy() {
                 <Button @click="startAdd()"><Plus class="size-4" />Add category</Button>
             </div>
 
-            <Card v-for="m in categories" :key="m.id">
-                <CardContent class="p-0">
-                    <div class="flex items-center gap-3 px-4 py-3">
-                        <button type="button" class="min-w-0 flex-1 text-left font-semibold" @click="startEdit(m, null, m.kind, m.children.length)">
-                            {{ m.name }}
-                            <span v-if="m.kind !== 'expense'" class="ml-2 rounded bg-muted px-1.5 py-0.5 text-xs font-normal text-muted-foreground">{{
-                                kinds[m.kind]
-                            }}</span>
-                        </button>
-                        <Link :href="route('transactions.index', { category: m.id })" class="text-sm text-muted-foreground hover:underline">{{
-                            total(m)
-                        }}</Link>
-                        <Button variant="ghost" size="sm" @click="startAdd(m.id)"
-                            ><Plus class="size-4" /><span class="sr-only sm:not-sr-only">Sub</span></Button
-                        >
-                    </div>
-                    <ul v-if="m.children.length" class="divide-y border-t">
-                        <li v-for="c in m.children" :key="c.id" class="flex items-center gap-3 py-2 pl-8 pr-4 text-sm">
-                            <button type="button" class="min-w-0 flex-1 truncate text-left" @click="startEdit(c, m.id, m.kind)">{{ c.name }}</button>
-                            <Link :href="route('transactions.index', { category: c.id })" class="text-muted-foreground hover:underline">{{
-                                c.count
+            <template v-for="(m, i) in categories" :key="m.id">
+                <h2
+                    v-if="i === 0 || categories[i - 1].kind !== m.kind"
+                    class="mt-2 text-sm font-semibold uppercase tracking-wide text-muted-foreground"
+                >
+                    {{ groupTitle[m.kind] ?? m.kind }}
+                </h2>
+                <p v-if="m.kind === 'transfer' && (i === 0 || categories[i - 1].kind !== m.kind)" class="-mt-2 text-sm text-muted-foreground">
+                    Money moved between your own accounts, like paying a card from checking. Left out of spending and income.
+                </p>
+                <Card>
+                    <CardContent class="p-0">
+                        <div class="flex items-center gap-3 px-4 py-3">
+                            <button
+                                type="button"
+                                class="min-w-0 flex-1 text-left font-semibold"
+                                @click="startEdit(m, null, m.kind, m.children.length)"
+                            >
+                                {{ m.name }}
+                            </button>
+                            <Link :href="route('transactions.index', { category: m.id })" class="text-sm text-muted-foreground hover:underline">{{
+                                total(m)
                             }}</Link>
-                        </li>
-                    </ul>
-                </CardContent>
-            </Card>
+                            <Button variant="ghost" size="sm" @click="startAdd(m.id)"
+                                ><Plus class="size-4" /><span class="sr-only sm:not-sr-only">Sub</span></Button
+                            >
+                        </div>
+                        <ul v-if="m.children.length" class="divide-y border-t">
+                            <li v-for="c in m.children" :key="c.id" class="flex items-center gap-3 py-2 pl-8 pr-4 text-sm">
+                                <button type="button" class="min-w-0 flex-1 truncate text-left" @click="startEdit(c, m.id, m.kind)">
+                                    {{ c.name }}
+                                </button>
+                                <Link :href="route('transactions.index', { category: c.id })" class="text-muted-foreground hover:underline">{{
+                                    c.count
+                                }}</Link>
+                            </li>
+                        </ul>
+                    </CardContent>
+                </Card>
+            </template>
         </div>
 
         <Dialog v-model:open="open">
