@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import BatchImport from '@/components/BatchImport.vue';
 import InputError from '@/components/InputError.vue';
 import NativeSelect from '@/components/NativeSelect.vue';
 import { Button } from '@/components/ui/button';
@@ -48,6 +49,7 @@ const props = defineProps<{
     accounts: Account[];
     imports: ImportInfo[];
     done: (ImportInfo & { account: Account }) | null;
+    batch: ImportInfo[];
 }>();
 
 const LAST_ACCOUNT_KEY = 'budget.import.account';
@@ -60,7 +62,8 @@ function rememberedAccount(): number | null {
     }
 }
 
-const step = ref<'file' | 'columns' | 'preview'>('file');
+const step = ref<'file' | 'columns' | 'preview' | 'batch'>('file');
+const batchFiles = ref<File[]>([]);
 const accountId = ref<number | null>(rememberedAccount() ?? props.accounts[0]?.id ?? null);
 const account = computed(() => props.accounts.find((a) => a.id === accountId.value) ?? null);
 const fileName = ref('');
@@ -107,9 +110,31 @@ async function pick(file: File | undefined) {
         reading.value = false;
     }
 }
+/** One file goes through the column check; several go to the batch screen. */
+function pickMany(list: FileList | null | undefined) {
+    const files = [...(list ?? [])];
+    if (files.length > 1) {
+        fileError.value = '';
+        batchFiles.value = files.slice(0, 20);
+        step.value = 'batch';
+        if (files.length > 20) fileError.value = 'Only the first 20 files were taken. Import the rest after these.';
+        return;
+    }
+    pick(files[0]);
+}
 function onDrop(e: DragEvent) {
     dragging.value = false;
-    pick(e.dataTransfer?.files?.[0]);
+    pickMany(e.dataTransfer?.files);
+}
+watch(
+    () => props.batch,
+    (b) => {
+        if (b.length) step.value = 'file';
+    },
+);
+function single(file: File) {
+    step.value = 'file';
+    pick(file);
 }
 
 const fields: [keyof Mapping, string][] = [
@@ -249,7 +274,7 @@ function undo(id: number) {
     <AppLayout :breadcrumbs="[{ title: 'Import', href: '/import' }]">
         <div class="mx-auto flex w-full max-w-5xl flex-col gap-4 p-4">
             <div>
-                <h1 class="text-xl font-semibold">Import a bank file</h1>
+                <h1 class="text-xl font-semibold">Import bank files</h1>
                 <p class="text-sm text-muted-foreground">CSV, XLS or XLSX. The file is read on your device; only the transactions are saved.</p>
             </div>
 
@@ -292,6 +317,42 @@ function undo(id: number) {
                 </CardContent>
             </Card>
 
+            <!-- Finished batch -->
+            <Card v-if="batch.length && step === 'file'" class="border-emerald-600/40">
+                <CardHeader>
+                    <CardTitle class="flex items-center gap-2 text-base"
+                        ><CheckCircle2 class="size-5 text-emerald-600" />Imported {{ batch.reduce((s, b) => s + b.rows_imported, 0) }} transactions
+                        from {{ batch.length }} {{ batch.length === 1 ? 'file' : 'files' }}</CardTitle
+                    >
+                    <CardDescription>To make a balance match your bank, open the account on the Accounts page.</CardDescription>
+                </CardHeader>
+                <CardContent class="p-0">
+                    <ul class="divide-y border-t">
+                        <li v-for="b in batch" :key="b.id" class="flex flex-wrap items-center justify-between gap-2 px-6 py-3 text-sm">
+                            <div class="min-w-0">
+                                <div class="font-medium">{{ b.account_name }}</div>
+                                <div class="text-muted-foreground">
+                                    {{ b.rows_imported }} from {{ b.file_name
+                                    }}<template v-if="b.rows_skipped">, {{ b.rows_skipped }} skipped</template>
+                                </div>
+                            </div>
+                            <Link :href="route('transactions.index', { import: b.id })" class="text-sm underline-offset-4 hover:underline"
+                                >See them</Link
+                            >
+                        </li>
+                    </ul>
+                </CardContent>
+            </Card>
+
+            <BatchImport
+                v-if="step === 'batch'"
+                :key="batchFiles.map((f) => f.name).join('|')"
+                :accounts="accounts"
+                :files="batchFiles"
+                @single="single"
+                @cancel="step = 'file'"
+            />
+
             <!-- Step 1: account and file -->
             <Card v-if="step === 'file'">
                 <CardContent class="grid gap-4 p-6">
@@ -300,7 +361,7 @@ function undo(id: number) {
                     </p>
                     <template v-else>
                         <div class="grid max-w-sm gap-2">
-                            <Label for="i-acct">Import into</Label>
+                            <Label for="i-acct">Import into (for a single file)</Label>
                             <NativeSelect id="i-acct" v-model="accountId">
                                 <option v-for="a in accounts" :key="a.id" :value="a.id">{{ a.name }}</option>
                             </NativeSelect>
@@ -313,13 +374,16 @@ function undo(id: number) {
                             @drop.prevent="onDrop"
                         >
                             <FileUp class="size-8 text-muted-foreground" />
-                            <span class="font-medium">{{ reading ? 'Reading…' : 'Choose a file or drop it here' }}</span>
-                            <span class="text-sm text-muted-foreground">CSV, XLS or XLSX from your bank</span>
+                            <span class="font-medium">{{ reading ? 'Reading…' : 'Choose files or drop them here' }}</span>
+                            <span class="text-sm text-muted-foreground"
+                                >CSV, XLS or XLSX from your bank. Pick several at once and each one is matched to its account.</span
+                            >
                             <input
                                 type="file"
+                                multiple
                                 accept=".csv,.txt,.xls,.xlsx,text/csv"
                                 class="sr-only"
-                                @change="pick(($event.target as HTMLInputElement).files?.[0])"
+                                @change="pickMany(($event.target as HTMLInputElement).files)"
                             />
                         </label>
                         <p v-if="fileError" class="text-sm text-red-600">{{ fileError }}</p>
