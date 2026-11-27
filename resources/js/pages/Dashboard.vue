@@ -11,6 +11,7 @@ const breadcrumbs: BreadcrumbItem[] = [{ title: 'Dashboard', href: '/dashboard' 
 defineProps<{
     accounts: { id: number; name: string; type_label: string; balance: number }[];
     netWorth: number;
+    investments: number;
     budget: { budgeted: number; spent: number; over: { name: string; over: number }[] };
     spentThisMonth: number;
     monthStart: string;
@@ -30,7 +31,10 @@ defineProps<{
                         <CardTitle class="text-2xl tabular-nums">{{ money(netWorth) }}</CardTitle>
                     </CardHeader>
                     <CardContent class="text-sm text-muted-foreground"
-                        >What you have minus what you owe, across {{ accounts.length }} accounts.</CardContent
+                        >What you have minus what you owe, across {{ accounts.length }} accounts<template v-if="investments">
+                            and {{ money(investments) }} in
+                            <Link :href="route('investments.index')" class="underline-offset-4 hover:underline">investments</Link></template
+                        >.</CardContent
                     >
                 </Card>
                 <Card>
