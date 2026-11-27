@@ -183,7 +183,7 @@ class InvestmentController extends Controller
         $data = $request->validate([
             'account_id' => ['required', 'integer', Rule::exists('investment_accounts', 'id')],
             'file_name' => ['required', 'string', 'max:255'],
-            'type' => ['required', Rule::in(['activity', 'holdings'])],
+            'type' => ['required', Rule::in(['activity', 'holdings', 'balances'])],
             'as_of' => ['required_if:type,holdings', 'nullable', 'date_format:Y-m-d'],
             'rows' => ['required', 'array', 'min:1', 'max:10000'],
             'rows.*.date' => ['required_if:type,activity', 'nullable', 'date_format:Y-m-d'],
@@ -199,7 +199,13 @@ class InvestmentController extends Controller
             'rows.*.quantity' => ['nullable', 'numeric'],
             'rows.*.price' => ['nullable', 'numeric', 'min:0'],
             'rows.*.ref' => ['nullable', 'string', 'max:100'],
+            'rows.*.balance' => ['required_if:type,balances', 'nullable', 'integer', 'between:0,99999999999'],
+            'rows.*.loan' => ['nullable', 'integer', 'between:0,99999999999'],
+            'rows.*.money_in' => ['nullable', 'integer', 'between:-99999999999,99999999999'],
         ]);
+        if ($data['type'] === 'balances') {
+            return $this->importBalances($data);
+        }
 
         return $data['type'] === 'holdings' ? $this->importHoldings($data) : $this->importActivity($data);
     }
@@ -244,7 +250,75 @@ class InvestmentController extends Controller
             }
         });
 
+        $this->dropCoveredStatementTotals($accountId);
+
         return back()->with('status', 'Imported '.count($new).' rows'.($skipped ? ', skipped '.$skipped.' already here' : '').'.');
+    }
+
+    /**
+     * Past statement balances. A statement's "money in" (contributions and
+     * loan repayments since the previous statement) is saved only for
+     * periods no activity file covers, so nothing is counted twice.
+     */
+    private function importBalances(array $data): RedirectResponse
+    {
+        $accountId = (int) $data['account_id'];
+        $rows = collect($data['rows'])->sortBy('date')->values();
+        $existing = InvestmentBalance::where('investment_account_id', $accountId)->get()->keyBy(fn ($b) => $b->date->toDateString());
+        $flowDates = InvestmentActivity::where('investment_account_id', $accountId)->whereIn('kind', array_diff(InvestmentActivity::flowKinds(), ['statement_in']))
+            ->pluck('date')->map(fn ($d) => $d->toDateString());
+        $added = 0;
+        DB::transaction(function () use ($data, $accountId, $rows, $existing, $flowDates, &$added) {
+            $import = InvestmentImport::create(['investment_account_id' => $accountId, 'file_name' => $data['file_name'], 'type' => 'balances', 'added' => $rows->count()]);
+            $prev = $existing->keys()->filter(fn ($d) => $d < $rows->first()['date'])->max();
+            foreach ($rows as $r) {
+                $existing->get($r['date'])?->delete();
+                InvestmentActivity::where('investment_account_id', $accountId)->where('kind', 'statement_in')->whereDate('date', $r['date'])->delete();
+                InvestmentBalance::create([
+                    'investment_account_id' => $accountId,
+                    'investment_import_id' => $import->id,
+                    'date' => $r['date'],
+                    'balance' => (int) $r['balance'],
+                    'loan_balance' => $r['loan'] ?? null,
+                    'source' => 'typed',
+                ]);
+                $in = (int) ($r['money_in'] ?? 0);
+                $covered = $flowDates->contains(fn ($d) => (! $prev || $d > $prev) && $d <= $r['date']);
+                if ($in !== 0 && $prev && ! $covered) {
+                    InvestmentActivity::create([
+                        'investment_account_id' => $accountId,
+                        'investment_import_id' => $import->id,
+                        'date' => $r['date'],
+                        'kind' => 'statement_in',
+                        'description' => 'Money in since the previous statement',
+                        'amount' => $in,
+                    ]);
+                }
+                $prev = $r['date'];
+                $added++;
+            }
+        });
+
+        return back()->with('status', 'Saved '.$added.' statement balances.');
+    }
+
+    /** Statement "money in" totals give way to real activity for the same period. */
+    private function dropCoveredStatementTotals(int $accountId): void
+    {
+        $totals = InvestmentActivity::where('investment_account_id', $accountId)->where('kind', 'statement_in')->get();
+        if ($totals->isEmpty()) {
+            return;
+        }
+        $dates = InvestmentBalance::where('investment_account_id', $accountId)->pluck('date')->map(fn ($d) => $d->toDateString())->sort()->values();
+        $flows = InvestmentActivity::where('investment_account_id', $accountId)->whereIn('kind', array_diff(InvestmentActivity::flowKinds(), ['statement_in']))
+            ->pluck('date')->map(fn ($d) => $d->toDateString());
+        foreach ($totals as $t) {
+            $end = $t->date->toDateString();
+            $start = $dates->filter(fn ($d) => $d < $end)->last();
+            if ($flows->contains(fn ($d) => (! $start || $d > $start) && $d <= $end)) {
+                $t->delete();
+            }
+        }
     }
 
     private function importHoldings(array $data): RedirectResponse

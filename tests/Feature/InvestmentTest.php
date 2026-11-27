@@ -223,4 +223,37 @@ class InvestmentTest extends TestCase
         $row = $this->props()['rows'][0];
         $this->assertSame(['amount' => 9_000_50, 'date' => '2026-11-25'], $row['loan']);
     }
+
+    public function test_past_statement_balances_build_history(): void
+    {
+        $a = $this->k401();
+        $rows = [
+            ['date' => '2025-06-30', 'balance' => 150_000_00, 'loan' => 9_000_00, 'money_in' => 3_000_00],
+            ['date' => '2025-09-30', 'balance' => 160_000_00, 'loan' => 8_500_00, 'money_in' => 3_000_00],
+            ['date' => '2025-12-31', 'balance' => 170_000_00, 'loan' => 8_000_00, 'money_in' => 3_000_00],
+        ];
+        $this->post('/investments/import', ['account_id' => $a->id, 'file_name' => 'statements.csv', 'type' => 'balances', 'rows' => $rows])->assertSessionHasNoErrors();
+        $this->assertSame(3, InvestmentBalance::count());
+        // The first statement is the starting point, so its money in is already inside it.
+        $this->assertSame(2, InvestmentActivity::where('kind', 'statement_in')->count());
+
+        // Importing the same file again doesn't double anything.
+        $this->post('/investments/import', ['account_id' => $a->id, 'file_name' => 'statements.csv', 'type' => 'balances', 'rows' => $rows]);
+        $this->assertSame(3, InvestmentBalance::count());
+        $this->assertSame(2, InvestmentActivity::where('kind', 'statement_in')->count());
+
+        $row = $this->props('?tf=all')['rows'][0];
+        $this->assertSame(150_000_00, $row['start']);
+        $this->assertSame(6_000_00, $row['put_in']);
+        $this->assertSame(14_000_00, $row['gain']);
+        $this->assertSame(['amount' => 8_000_00, 'date' => '2025-12-31'], $row['loan']);
+
+        // A real activity file for Oct-Dec replaces that quarter's statement total.
+        $this->post('/investments/import', ['account_id' => $a->id, 'file_name' => 'jh.csv', 'type' => 'activity', 'rows' => [
+            ['date' => '2025-10-15', 'kind' => 'employee', 'description' => 'Contribution', 'amount' => 1_500_00],
+            ['date' => '2025-11-15', 'kind' => 'employer', 'description' => 'Contribution', 'amount' => 1_400_00],
+        ]]);
+        $this->assertSame(['2025-09-30'], InvestmentActivity::where('kind', 'statement_in')->pluck('date')->map->toDateString()->all());
+        $this->assertSame(5_900_00, $this->props('?tf=all')['rows'][0]['put_in']);
+    }
 }

@@ -91,9 +91,9 @@ function save() {
     saving.value = true;
     serverErr.value = '';
     const payload =
-        p.type === 'activity'
-            ? { account_id: account.value, file_name: fileName.value, type: 'activity', rows: p.rows }
-            : { account_id: account.value, file_name: fileName.value, type: 'holdings', as_of: asOf.value, rows: holdingRows.value };
+        p.type === 'holdings'
+            ? { account_id: account.value, file_name: fileName.value, type: 'holdings', as_of: asOf.value, rows: holdingRows.value }
+            : { account_id: account.value, file_name: fileName.value, type: p.type, rows: p.rows };
     router.post(route('investments.import'), payload as never, {
         preserveScroll: true,
         onSuccess: () => (open.value = false),
@@ -156,6 +156,25 @@ function save() {
                         </p>
                     </div>
 
+                    <div v-if="parsed.type === 'balances'" class="grid gap-2 rounded-md border p-3 text-sm">
+                        <p>
+                            <b>{{ parsed.rows.length }}</b> statement balances, {{ shortDate(parsed.rows[0].date) }} to
+                            {{ shortDate(parsed.rows[parsed.rows.length - 1].date) }}. A balance already saved for the same date is replaced.
+                        </p>
+                        <ul class="grid grid-cols-1 gap-1">
+                            <li v-for="r in parsed.rows.slice(-8)" :key="r.date" class="flex justify-between gap-3 border-t pt-1">
+                                <span class="min-w-0 truncate"
+                                    >{{ shortDate(r.date) }}<span v-if="r.loan" class="text-muted-foreground"> · loan {{ money(r.loan) }}</span
+                                    ><span v-if="r.money_in" class="text-muted-foreground"> · in {{ money(r.money_in) }}</span></span
+                                >
+                                <span class="tabular-nums">{{ money(r.balance) }}</span>
+                            </li>
+                            <li v-if="parsed.rows.length > 8" class="text-muted-foreground">and {{ parsed.rows.length - 8 }} earlier</li>
+                        </ul>
+                        <p class="text-xs text-muted-foreground">
+                            Money put in is only added for periods your activity files don’t already cover, so nothing is counted twice.
+                        </p>
+                    </div>
                     <div v-if="parsed.type === 'holdings'" class="grid gap-3 rounded-md border p-3 text-sm">
                         <div v-if="parsed.accounts.length > 1" class="grid gap-2">
                             <Label for="inv-facct">This file has several accounts. Which one is this?</Label>

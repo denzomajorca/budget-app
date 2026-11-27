@@ -39,7 +39,14 @@ export interface HoldingRow {
     cost: number | null; // cents
     account: string;
 }
+export interface BalanceRow {
+    date: string;
+    balance: number; // cents
+    loan: number | null; // cents
+    money_in: number | null; // cents put in since the previous statement
+}
 export type Parsed =
+    | { type: 'balances'; source: string; rows: BalanceRow[]; skipped: number }
     | { type: 'activity'; source: string; rows: ActivityRow[]; skipped: number }
     | { type: 'holdings'; source: string; rows: HoldingRow[]; asOf: string | null; accounts: string[] };
 
@@ -82,6 +89,15 @@ function findHeader(t: Table, test: (cells: string[]) => boolean): number {
 }
 
 export function parseInvestmentFile(t: Table): Parsed {
+    // Past statement balances: Date plus a balance, and no Amount column.
+    const bal = findHeader(
+        t,
+        (c) =>
+            c.some((x) => /(^|statement |as of )date$|^period end/.test(x)) &&
+            c.some((x) => /balance|^value$|total value/.test(x)) &&
+            !c.some((x) => /^amount/.test(x)),
+    );
+    if (bal >= 0) return parseBalances(t, bal);
     const hold = findHeader(
         t,
         (c) => c.some((x) => /current value|market value|^value$|^balance$|ending balance/.test(x)) && !c.some((x) => /date$/.test(x)),
@@ -223,4 +239,39 @@ function parseHoldings(t: Table, hi: number): Parsed {
     if (!rows.length) throw new Error('No holdings with a value were found in it.');
     const accounts = [...new Set(rows.map((r) => r.account))].filter(Boolean);
     return { type: 'holdings', source: c.account >= 0 ? 'Fidelity' : 'file', rows, asOf: downloadedDate(t), accounts };
+}
+
+function parseBalances(t: Table, hi: number): Parsed {
+    const H = t[hi].map(low);
+    const col = (...res: RegExp[]) => {
+        for (const re of res) {
+            const i = H.findIndex((h) => re.test(h));
+            if (i >= 0) return i;
+        }
+        return -1;
+    };
+    const c = {
+        date: col(/(^|statement |as of )date$/, /^period end/),
+        balance: col(/^(ending |total |account )?balance$/, /^ending balance/, /total value/, /^value$/, /balance/),
+        loan: col(/loan/),
+        moneyIn: col(/money in/, /contribution/, /deposit/),
+    };
+    const body = t.slice(hi + 1);
+    const fmt = guessDateFormat(body.map((r) => r[c.date]));
+    let skipped = 0;
+    const rows: BalanceRow[] = [];
+    for (const r of body) {
+        const date = parseDate(r[c.date], fmt);
+        const balance = parseAmount(r[c.balance]);
+        if (!date || balance === null) {
+            skipped++;
+            continue;
+        }
+        const loan = c.loan >= 0 && c.loan !== c.balance ? parseAmount(r[c.loan]) : null;
+        const moneyIn = c.moneyIn >= 0 ? parseAmount(r[c.moneyIn]) : null;
+        rows.push({ date, balance: Math.abs(balance), loan: loan === null ? null : Math.abs(loan), money_in: moneyIn });
+    }
+    if (!rows.length) throw new Error('No dates with a balance were found in it.');
+    rows.sort((a, b) => (a.date < b.date ? -1 : 1));
+    return { type: 'balances', source: 'file', rows, skipped };
 }

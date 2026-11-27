@@ -17,6 +17,7 @@ class InvestmentActivity extends Model
         'employer' => ['Employer contribution', 'in'],
         'loan_repayment' => ['Loan repayment', 'in'],
         'deposit' => ['Deposit', 'in'],
+        'statement_in' => ['Money in (statement total)', 'in'],
         'withdrawal' => ['Withdrawal', 'out'],
         'loan' => ['Loan taken out', 'out'],
         'buy' => ['Bought', 'none'],
@@ -36,6 +37,11 @@ class InvestmentActivity extends Model
             'units' => 'float',
             'price' => 'float',
         ];
+    }
+
+    public function import(): BelongsTo
+    {
+        return $this->belongsTo(InvestmentImport::class, 'investment_import_id');
     }
 
     public function account(): BelongsTo
