@@ -172,7 +172,8 @@ function save() {
                             <li v-if="parsed.rows.length > 8" class="text-muted-foreground">and {{ parsed.rows.length - 8 }} earlier</li>
                         </ul>
                         <p class="text-xs text-muted-foreground">
-                            Money put in is only added for periods your activity files don’t already cover, so nothing is counted twice.
+                            Where your activity file already shows some of a period’s money in, only the missing part is added, so nothing counts
+                            twice.
                         </p>
                     </div>
                     <div v-if="parsed.type === 'holdings'" class="grid gap-3 rounded-md border p-3 text-sm">

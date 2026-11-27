@@ -248,12 +248,16 @@ class InvestmentTest extends TestCase
         $this->assertSame(14_000_00, $row['gain']);
         $this->assertSame(['amount' => 8_000_00, 'date' => '2025-12-31'], $row['loan']);
 
-        // A real activity file for Oct-Dec replaces that quarter's statement total.
+        // An activity file covering part of Oct-Dec: only the part it misses stays.
         $this->post('/investments/import', ['account_id' => $a->id, 'file_name' => 'jh.csv', 'type' => 'activity', 'rows' => [
             ['date' => '2025-10-15', 'kind' => 'employee', 'description' => 'Contribution', 'amount' => 1_500_00],
             ['date' => '2025-11-15', 'kind' => 'employer', 'description' => 'Contribution', 'amount' => 1_400_00],
         ]]);
-        $this->assertSame(['2025-09-30'], InvestmentActivity::where('kind', 'statement_in')->pluck('date')->map->toDateString()->all());
-        $this->assertSame(5_900_00, $this->props('?tf=all')['rows'][0]['put_in']);
+        $this->assertSame([3_000_00, 100_00], InvestmentActivity::where('kind', 'statement_in')->orderBy('date')->pluck('amount')->all());
+        $this->assertSame(6_000_00, $this->props('?tf=all')['rows'][0]['put_in']);
+
+        // Undoing the activity file puts the full statement amount back.
+        $this->delete('/investments/import/'.$a->imports()->where('type', 'activity')->first()->id);
+        $this->assertSame([3_000_00, 3_000_00], InvestmentActivity::where('kind', 'statement_in')->orderBy('date')->pluck('amount')->all());
     }
 }

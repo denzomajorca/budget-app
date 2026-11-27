@@ -162,6 +162,7 @@ class InvestmentController extends Controller
             'description' => ($data['description'] ?? null) ?: InvestmentActivity::KINDS[$data['kind']][0],
             'amount' => InvestmentActivity::signed($data['kind'], Money::toCents((string) $data['amount'])),
         ]);
+        self::reconcileStatementTotals((int) $data['account_id']);
 
         return back()->with('status', 'Added.');
     }
@@ -169,6 +170,7 @@ class InvestmentController extends Controller
     public function destroyActivity(InvestmentActivity $activity): RedirectResponse
     {
         $activity->delete();
+        self::reconcileStatementTotals($activity->investment_account_id);
 
         return back()->with('status', 'Removed.');
     }
@@ -250,7 +252,7 @@ class InvestmentController extends Controller
             }
         });
 
-        $this->dropCoveredStatementTotals($accountId);
+        self::reconcileStatementTotals($accountId);
 
         return back()->with('status', 'Imported '.count($new).' rows'.($skipped ? ', skipped '.$skipped.' already here' : '').'.');
     }
@@ -265,59 +267,54 @@ class InvestmentController extends Controller
         $accountId = (int) $data['account_id'];
         $rows = collect($data['rows'])->sortBy('date')->values();
         $existing = InvestmentBalance::where('investment_account_id', $accountId)->get()->keyBy(fn ($b) => $b->date->toDateString());
-        $flowDates = InvestmentActivity::where('investment_account_id', $accountId)->whereIn('kind', array_diff(InvestmentActivity::flowKinds(), ['statement_in']))
-            ->pluck('date')->map(fn ($d) => $d->toDateString());
-        $added = 0;
-        DB::transaction(function () use ($data, $accountId, $rows, $existing, $flowDates, &$added) {
+        DB::transaction(function () use ($data, $accountId, $rows, $existing) {
             $import = InvestmentImport::create(['investment_account_id' => $accountId, 'file_name' => $data['file_name'], 'type' => 'balances', 'added' => $rows->count()]);
-            $prev = $existing->keys()->filter(fn ($d) => $d < $rows->first()['date'])->max();
             foreach ($rows as $r) {
                 $existing->get($r['date'])?->delete();
-                InvestmentActivity::where('investment_account_id', $accountId)->where('kind', 'statement_in')->whereDate('date', $r['date'])->delete();
                 InvestmentBalance::create([
                     'investment_account_id' => $accountId,
                     'investment_import_id' => $import->id,
                     'date' => $r['date'],
                     'balance' => (int) $r['balance'],
                     'loan_balance' => $r['loan'] ?? null,
+                    'money_in' => isset($r['money_in']) ? (int) $r['money_in'] : null,
                     'source' => 'typed',
                 ]);
-                $in = (int) ($r['money_in'] ?? 0);
-                $covered = $flowDates->contains(fn ($d) => (! $prev || $d > $prev) && $d <= $r['date']);
-                if ($in !== 0 && $prev && ! $covered) {
-                    InvestmentActivity::create([
-                        'investment_account_id' => $accountId,
-                        'investment_import_id' => $import->id,
-                        'date' => $r['date'],
-                        'kind' => 'statement_in',
-                        'description' => 'Money in since the previous statement',
-                        'amount' => $in,
-                    ]);
-                }
-                $prev = $r['date'];
-                $added++;
             }
+            self::reconcileStatementTotals($accountId);
         });
 
-        return back()->with('status', 'Saved '.$added.' statement balances.');
+        return back()->with('status', 'Saved '.$rows->count().' statement balances.');
     }
 
-    /** Statement "money in" totals give way to real activity for the same period. */
-    private function dropCoveredStatementTotals(int $accountId): void
+    /**
+     * A statement says how much money went in since the previous one. Where
+     * activity files already show some of it, only the part they miss is
+     * added (as "Money in (statement total)"), so nothing counts twice and
+     * a file that starts mid-quarter still gets the full amount.
+     */
+    public static function reconcileStatementTotals(int $accountId): void
     {
-        $totals = InvestmentActivity::where('investment_account_id', $accountId)->where('kind', 'statement_in')->get();
-        if ($totals->isEmpty()) {
-            return;
-        }
-        $dates = InvestmentBalance::where('investment_account_id', $accountId)->pluck('date')->map(fn ($d) => $d->toDateString())->sort()->values();
-        $flows = InvestmentActivity::where('investment_account_id', $accountId)->whereIn('kind', array_diff(InvestmentActivity::flowKinds(), ['statement_in']))
-            ->pluck('date')->map(fn ($d) => $d->toDateString());
-        foreach ($totals as $t) {
-            $end = $t->date->toDateString();
-            $start = $dates->filter(fn ($d) => $d < $end)->last();
-            if ($flows->contains(fn ($d) => (! $start || $d > $start) && $d <= $end)) {
-                $t->delete();
+        InvestmentActivity::where('investment_account_id', $accountId)->where('kind', 'statement_in')->delete();
+        $balances = InvestmentBalance::where('investment_account_id', $accountId)->orderBy('date')->get();
+        $flows = InvestmentActivity::where('investment_account_id', $accountId)->whereIn('kind', InvestmentActivity::flowKinds())->get(['date', 'amount']);
+        $prev = null;
+        foreach ($balances as $b) {
+            if ($prev && $b->money_in !== null) {
+                $seen = (int) $flows->filter(fn ($f) => $f->date->gt($prev->date) && $f->date->lte($b->date))->sum('amount');
+                $missing = $b->money_in - $seen;
+                if ($missing > 0) {
+                    InvestmentActivity::create([
+                        'investment_account_id' => $accountId,
+                        'investment_import_id' => $b->investment_import_id,
+                        'date' => $b->date->toDateString(),
+                        'kind' => 'statement_in',
+                        'description' => $seen ? 'Money in on the statement but not in your files' : 'Money in since the previous statement',
+                        'amount' => $missing,
+                    ]);
+                }
             }
+            $prev = $b;
         }
     }
 
@@ -360,6 +357,7 @@ class InvestmentController extends Controller
     public function destroyImport(InvestmentImport $import): RedirectResponse
     {
         $import->delete();
+        self::reconcileStatementTotals($import->investment_account_id);
 
         return back()->with('status', 'Import undone.');
     }

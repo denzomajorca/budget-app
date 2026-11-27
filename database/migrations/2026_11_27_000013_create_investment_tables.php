@@ -65,6 +65,7 @@ return new class extends Migration
             $table->date('date');
             $table->bigInteger('balance'); // cents
             $table->bigInteger('loan_balance')->nullable(); // cents still owed on a 401(k) loan
+            $table->bigInteger('money_in')->nullable(); // cents put in since the previous statement, from the statement
             $table->string('source', 20)->default('typed'); // typed, holdings
             $table->timestamps();
             $table->unique(['investment_account_id', 'date']);
