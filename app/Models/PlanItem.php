@@ -8,9 +8,10 @@ use Illuminate\Support\Carbon;
 
 class PlanItem extends Model
 {
-    public const FREQUENCIES = [1 => 'Monthly', 3 => 'Quarterly', 6 => 'Every 6 months', 12 => 'Yearly'];
+    /** Frequency choices: "<n>w" every n weeks, "<n>m" every n months. */
+    public const FREQUENCIES = ['1w' => 'Weekly', '2w' => 'Every 2 weeks', '1m' => 'Monthly', '3m' => 'Quarterly', '6m' => 'Every 6 months', '12m' => 'Yearly'];
 
-    protected $fillable = ['group', 'name', 'category_id', 'amount', 'every_months', 'next_due', 'is_estimate', 'saved', 'due_by'];
+    protected $fillable = ['group', 'name', 'category_id', 'amount', 'every_months', 'every_weeks', 'next_due', 'is_estimate', 'saved', 'due_by'];
 
     protected function casts(): array
     {
@@ -18,6 +19,7 @@ class PlanItem extends Model
             'amount' => 'integer',
             'saved' => 'integer',
             'every_months' => 'integer',
+            'every_weeks' => 'integer',
             'is_estimate' => 'boolean',
             'next_due' => 'date:Y-m-d',
             'due_by' => 'date:Y-m-d',
@@ -32,13 +34,15 @@ class PlanItem extends Model
     /** Due dates of a bill from $from to $to, stepping from its saved next due date. */
     public function dueDates(Carbon $from, Carbon $to): array
     {
-        if ($this->group !== 'bill' || ! $this->next_due || ! $this->every_months) {
+        if ($this->group !== 'bill' || ! $this->next_due || (! $this->every_months && ! $this->every_weeks)) {
             return [];
         }
         $out = [];
         $start = $this->next_due->copy()->startOfDay();
-        for ($i = 0; $i < 400; $i++) {
-            $d = $start->copy()->addMonthsNoOverflow($i * $this->every_months);
+        for ($i = 0; $i < 2000; $i++) {
+            $d = $this->every_weeks
+                ? $start->copy()->addWeeks($i * $this->every_weeks)
+                : $start->copy()->addMonthsNoOverflow($i * $this->every_months);
             if ($d->gt($to)) {
                 break;
             }
@@ -48,6 +52,21 @@ class PlanItem extends Model
         }
 
         return $out;
+    }
+
+    public function frequencyKey(): ?string
+    {
+        return $this->every_weeks ? $this->every_weeks.'w' : ($this->every_months ? $this->every_months.'m' : null);
+    }
+
+    /** A bill's average cost per month. */
+    public function billPerMonth(): int
+    {
+        if ($this->every_weeks) {
+            return (int) round($this->amount * 52 / 12 / $this->every_weeks);
+        }
+
+        return (int) round($this->amount / max(1, (int) $this->every_months));
     }
 
     /** Months from this month up to the month before the goal date (at least 1). */
