@@ -31,8 +31,8 @@ class CategoryPath
     public static function kindFor(string $main): string
     {
         return match (true) {
-            (bool) preg_match('/income|paycheck|salary|interest|dividend/i', $main) => 'income',
-            (bool) preg_match('/transfer/i', $main) => 'transfer',
+            (bool) preg_match('/income|paycheck|payroll|salary|interest|dividend/i', $main) => 'income',
+            Transfers::looksLikeAccount($main) => 'transfer',
             default => 'expense',
         };
     }
