@@ -7,9 +7,11 @@ use App\Models\Category;
 use App\Models\Transaction;
 use App\Rules\MoneyAmount;
 use App\Support\Money;
+use App\Support\Transfers;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\Rule;
 use Inertia\Inertia;
 use Inertia\Response;
@@ -25,12 +27,13 @@ class TransactionController extends Controller
             'to' => ['nullable', 'date_format:Y-m-d'],
             'q' => ['nullable', 'string', 'max:100'],
             'import' => ['nullable', 'integer'],
+            'transfers' => ['nullable', Rule::in(['unpaired'])],
         ]);
 
         $query = $this->filtered($filters);
         $totals = (clone $query)->selectRaw('coalesce(sum(case when amount > 0 then amount else 0 end), 0) as money_in, coalesce(sum(case when amount < 0 then amount else 0 end), 0) as money_out, count(*) as n')->first();
 
-        $page = $query->with(['account:id,name', 'category.parent'])
+        $page = $query->with(['account:id,name', 'category.parent', 'transfer.account:id,name'])
             ->orderByDesc('date')->orderByDesc('id')
             ->paginate(50)->withQueryString()
             ->through(fn (Transaction $t) => [
@@ -43,12 +46,18 @@ class TransactionController extends Controller
                 'account' => $t->account?->name,
                 'category_id' => $t->category_id,
                 'category' => $t->category?->label(),
+                'is_transfer' => $t->category?->kind === 'transfer',
+                // "CHASE Checking → CHASE Savings", from where the money left to where it arrived.
+                'transfer' => $t->transfer ? ($t->amount < 0
+                    ? $t->account?->name.' → '.$t->transfer->account?->name
+                    : $t->transfer->account?->name.' → '.$t->account?->name) : null,
             ]);
 
         return Inertia::render('Transactions/Index', [
             'transactions' => $page,
             'totals' => ['in' => (int) $totals->money_in, 'out' => (int) $totals->money_out, 'count' => (int) $totals->n],
-            'filters' => array_merge(['account' => null, 'category' => null, 'from' => null, 'to' => null, 'q' => null, 'import' => null], $filters),
+            'filters' => array_merge(['account' => null, 'category' => null, 'from' => null, 'to' => null, 'q' => null, 'import' => null, 'transfers' => null], $filters),
+            'unpaired_transfers' => Transfers::unpairedCount(),
             'accounts' => Account::orderBy('is_archived')->orderBy('name')->get(['id', 'name', 'is_archived']),
             'categories' => Category::options(),
         ]);
@@ -57,13 +66,25 @@ class TransactionController extends Controller
     public function store(Request $request): RedirectResponse
     {
         Transaction::create($this->validated($request));
+        Transfers::pair();
 
         return back()->with('status', 'Transaction added.');
     }
 
     public function update(Request $request, Transaction $transaction): RedirectResponse
     {
-        $transaction->update($this->validated($request));
+        $data = $this->validated($request);
+        $relinks = $data['amount'] !== $transaction->amount || (int) $data['account_id'] !== $transaction->account_id
+            || abs($transaction->date->diffInDays($data['date'])) > Transfers::WINDOW_DAYS
+            || ! ($data['category_id'] && Category::whereKey($data['category_id'])->where('kind', 'transfer')->exists());
+        DB::transaction(function () use ($transaction, $data, $relinks) {
+            if ($relinks && $transaction->transfer_id) {
+                Transaction::whereKey($transaction->transfer_id)->update(['transfer_id' => null]);
+                $data['transfer_id'] = null;
+            }
+            $transaction->update($data);
+        });
+        Transfers::pair();
 
         return back()->with('status', 'Transaction saved.');
     }
@@ -90,6 +111,7 @@ class TransactionController extends Controller
 
                 return $category ? $q->whereIn('category_id', $category->idsWithChildren()) : $q->whereRaw('1 = 0');
             })
+            ->when(($f['transfers'] ?? null) === 'unpaired', fn ($q) => $q->whereNull('transfer_id')->whereHas('category', fn ($c) => $c->where('kind', 'transfer')))
             ->when($f['import'] ?? null, fn ($q, $id) => $q->where('import_id', $id))
             ->when($f['from'] ?? null, fn ($q, $d) => $q->whereDate('date', '>=', $d))
             ->when($f['to'] ?? null, fn ($q, $d) => $q->whereDate('date', '<=', $d))

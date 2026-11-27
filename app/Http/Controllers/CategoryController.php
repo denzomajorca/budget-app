@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Models\Category;
 use App\Models\Transaction;
+use App\Support\Transfers;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -17,7 +18,7 @@ class CategoryController extends Controller
     public function index(): Response
     {
         $counts = Transaction::select('category_id', DB::raw('count(*) as n'))->groupBy('category_id')->pluck('n', 'category_id');
-        $mains = Category::whereNull('parent_id')->with('children')->orderBy('name')->get();
+        $mains = Category::whereNull('parent_id')->with('children')->orderByRaw(Category::KIND_ORDER)->orderBy('name')->get();
 
         return Inertia::render('Categories/Index', [
             'categories' => $mains->map(fn (Category $m) => [
@@ -55,6 +56,7 @@ class CategoryController extends Controller
             // Subcategories always share their main category's kind.
             $category->children()->update(['kind' => $category->kind]);
         });
+        Transfers::pair();
 
         return back()->with('status', 'Category saved.');
     }

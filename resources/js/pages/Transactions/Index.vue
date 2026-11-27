@@ -14,6 +14,8 @@ import { computed, reactive, ref } from 'vue';
 interface Row extends Txn {
     account: string | null;
     category: string | null;
+    is_transfer: boolean;
+    transfer: string | null;
 }
 interface Filters {
     account: string | number | null;
@@ -22,6 +24,7 @@ interface Filters {
     to: string | null;
     q: string | null;
     import: string | number | null;
+    transfers: string | null;
 }
 
 const props = defineProps<{
@@ -36,6 +39,7 @@ const props = defineProps<{
     filters: Filters;
     accounts: { id: number; name: string; is_archived: boolean }[];
     categories: CategoryOption[];
+    unpaired_transfers: number;
 }>();
 
 const f = reactive({
@@ -45,7 +49,13 @@ const f = reactive({
     to: props.filters.to ?? '',
     q: props.filters.q ?? '',
     import: props.filters.import ? String(props.filters.import) : '',
+    transfers: props.filters.transfers ?? '',
 });
+function categoryText(t: Row) {
+    if (t.transfer) return 'Transfer: ' + t.transfer;
+    if (t.is_transfer) return (t.category ?? 'Transfer') + ' (no match found)';
+    return t.category ?? 'Uncategorized';
+}
 const onlyMain = computed(() => {
     if (!f.category.startsWith('only-')) return '';
     const id = Number(f.category.slice(5));
@@ -59,7 +69,7 @@ function apply() {
 }
 const applySearch = useDebounceFn(apply, 350);
 function clear() {
-    Object.assign(f, { account: '', category: '', from: '', to: '', q: '', import: '' });
+    Object.assign(f, { account: '', category: '', from: '', to: '', q: '', import: '', transfers: '' });
     apply();
 }
 
@@ -110,6 +120,15 @@ const pageLinks = computed(() => props.transactions.links.map((l) => ({ ...l, la
                 </CardContent>
             </Card>
 
+            <p v-if="f.transfers" class="text-sm">
+                Showing transfers with no matching other side. Usually the other account isn't imported yet, or one side is in a spending category.
+                Fix it by giving both sides a Transfer category.
+                <button type="button" class="underline" @click="((f.transfers = ''), apply())">Show all</button>
+            </p>
+            <p v-else-if="unpaired_transfers" class="text-sm text-muted-foreground">
+                {{ unpaired_transfers }} {{ unpaired_transfers === 1 ? 'transfer has' : 'transfers have' }} no matching other side.
+                <button type="button" class="underline" @click="((f.transfers = 'unpaired'), apply())">Review them</button>
+            </p>
             <p v-if="f.import" class="text-sm">
                 Showing one import only.
                 <button type="button" class="underline" @click="((f.import = ''), apply())">Show all</button>
@@ -141,7 +160,7 @@ const pageLinks = computed(() => props.transactions.links.map((l) => ({ ...l, la
                             <button type="button" class="flex w-full items-start gap-3 px-4 py-3 text-left" @click="edit(t)">
                                 <div class="min-w-0 flex-1">
                                     <div class="truncate font-medium">{{ t.payee }}</div>
-                                    <div class="truncate text-sm text-muted-foreground">{{ t.category ?? 'Uncategorized' }}</div>
+                                    <div class="truncate text-sm text-muted-foreground">{{ categoryText(t) }}</div>
                                     <div class="truncate text-xs text-muted-foreground">{{ shortDate(t.date) }} · {{ t.account }}</div>
                                 </div>
                                 <div class="font-medium tabular-nums" :class="t.amount > 0 ? 'text-emerald-700 dark:text-emerald-400' : ''">
@@ -177,7 +196,9 @@ const pageLinks = computed(() => props.transactions.links.map((l) => ({ ...l, la
                                     <div class="font-medium">{{ t.payee }}</div>
                                     <div v-if="t.memo" class="text-xs text-muted-foreground">{{ t.memo }}</div>
                                 </td>
-                                <td class="px-4 py-2.5" :class="t.category ? '' : 'text-muted-foreground'">{{ t.category ?? 'Uncategorized' }}</td>
+                                <td class="px-4 py-2.5" :class="t.category && !t.is_transfer ? '' : 'text-muted-foreground'">
+                                    {{ categoryText(t) }}
+                                </td>
                                 <td class="px-4 py-2.5 text-muted-foreground">{{ t.account }}</td>
                                 <td
                                     class="whitespace-nowrap px-4 py-2.5 text-right font-medium tabular-nums"
