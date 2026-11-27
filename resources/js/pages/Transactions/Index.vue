@@ -9,7 +9,7 @@ import { groupByKind } from '@/lib/categories';
 import { money, shortDate } from '@/lib/money';
 import { Head, Link, router, useForm } from '@inertiajs/vue3';
 import { useDebounceFn } from '@vueuse/core';
-import { CheckCheck, Plus, Wand2, X } from 'lucide-vue-next';
+import { ArrowDown, ArrowUp, ArrowUpDown, CheckCheck, Plus, Wand2, X } from 'lucide-vue-next';
 import { computed, reactive, ref } from 'vue';
 
 interface Row extends Txn {
@@ -30,6 +30,8 @@ interface Filters {
     import: string | number | null;
     transfers: string | null;
     review: string | null;
+    sort: string | null;
+    dir: string | null;
 }
 
 const props = defineProps<{
@@ -59,7 +61,33 @@ const f = reactive({
     import: props.filters.import ? String(props.filters.import) : '',
     transfers: props.filters.transfers ?? '',
     review: props.filters.review ?? '',
+    sort: props.filters.sort ?? '',
+    dir: props.filters.dir ?? '',
 });
+type SortKey = 'date' | 'payee' | 'category' | 'account' | 'amount';
+const sortKey = computed<SortKey>(() => (f.sort || 'date') as SortKey);
+const sortDir = computed(() => f.dir || (f.sort ? 'asc' : 'desc'));
+/** First click sorts A→Z (oldest, smallest first); clicking the same header again flips it. */
+function sortBy(key: SortKey) {
+    const dir = sortKey.value === key ? (sortDir.value === 'asc' ? 'desc' : 'asc') : 'asc';
+    // Newest first is the normal order, so it needs no setting.
+    if (key === 'date' && dir === 'desc') Object.assign(f, { sort: '', dir: '' });
+    else Object.assign(f, { sort: key, dir });
+    apply();
+}
+function sortFromMenu(value: string) {
+    const [key, dir] = value.split(':');
+    if (key === 'date' && dir === 'desc') Object.assign(f, { sort: '', dir: '' });
+    else Object.assign(f, { sort: key, dir });
+    apply();
+}
+const columns: { key: SortKey; label: string; right?: boolean }[] = [
+    { key: 'date', label: 'Date' },
+    { key: 'payee', label: 'Payee' },
+    { key: 'category', label: 'Category' },
+    { key: 'account', label: 'Account' },
+    { key: 'amount', label: 'Amount', right: true },
+];
 function categoryText(t: Row) {
     if (t.transfer) return 'Transfer: ' + t.transfer;
     if (t.is_transfer && t.transfer_outside) return (t.category ?? 'Transfer') + ' (account outside the app)';
@@ -71,7 +99,7 @@ const onlyMain = computed(() => {
     const id = Number(f.category.slice(5));
     return props.categories.find((c) => c.id === id)?.label ?? 'Category';
 });
-const hasFilters = computed(() => Object.values(f).some((v) => v !== ''));
+const hasFilters = computed(() => Object.entries(f).some(([k, v]) => v !== '' && k !== 'sort' && k !== 'dir'));
 
 function apply() {
     const params = Object.fromEntries(Object.entries(f).filter(([, v]) => v !== ''));
@@ -79,7 +107,7 @@ function apply() {
 }
 const applySearch = useDebounceFn(apply, 350);
 function clear() {
-    Object.assign(f, { account: '', category: '', from: '', to: '', q: '', import: '', transfers: '', review: '' });
+    Object.assign(f, { account: '', category: '', from: '', to: '', q: '', import: '', transfers: '', review: '', sort: f.sort, dir: f.dir });
     apply();
 }
 
@@ -309,6 +337,24 @@ const pageLinks = computed(() => props.transactions.links.map((l) => ({ ...l, la
                     <Button v-if="f.transfers" size="sm" variant="outline" :disabled="busy" @click="markTickedOutside">Outside the app</Button>
                     <Button size="sm" variant="ghost" @click="selected = []">Clear</Button>
                 </div>
+                <!-- Phones: a sort menu instead of column headers -->
+                <NativeSelect
+                    class="h-9 md:hidden"
+                    aria-label="Sort by"
+                    :model-value="sortKey + ':' + sortDir"
+                    @change="sortFromMenu(($event.target as HTMLSelectElement).value)"
+                >
+                    <option value="date:desc">Newest first</option>
+                    <option value="date:asc">Oldest first</option>
+                    <option value="payee:asc">Payee A–Z</option>
+                    <option value="payee:desc">Payee Z–A</option>
+                    <option value="category:asc">Category A–Z</option>
+                    <option value="category:desc">Category Z–A</option>
+                    <option value="account:asc">Account A–Z</option>
+                    <option value="account:desc">Account Z–A</option>
+                    <option value="amount:asc">Amount, low to high</option>
+                    <option value="amount:desc">Amount, high to low</option>
+                </NativeSelect>
                 <!-- Phones: a simple list -->
                 <Card class="md:hidden">
                     <ul class="divide-y">
@@ -395,11 +441,26 @@ const pageLinks = computed(() => props.transactions.links.map((l) => ({ ...l, la
                                         @change="toggleAll"
                                     />
                                 </th>
-                                <th class="px-4 py-2 font-medium">Date</th>
-                                <th class="px-4 py-2 font-medium">Payee</th>
-                                <th class="px-4 py-2 font-medium">Category</th>
-                                <th class="px-4 py-2 font-medium">Account</th>
-                                <th class="px-4 py-2 text-right font-medium">Amount</th>
+                                <th
+                                    v-for="c in columns"
+                                    :key="c.key"
+                                    class="px-4 py-2 font-medium"
+                                    :class="c.right ? 'text-right' : ''"
+                                    :aria-sort="sortKey === c.key ? (sortDir === 'asc' ? 'ascending' : 'descending') : 'none'"
+                                >
+                                    <button
+                                        type="button"
+                                        class="inline-flex items-center gap-1 hover:text-foreground"
+                                        :class="sortKey === c.key ? 'text-foreground' : ''"
+                                        :title="'Sort by ' + c.label.toLowerCase()"
+                                        @click="sortBy(c.key)"
+                                    >
+                                        {{ c.label }}
+                                        <ArrowUp v-if="sortKey === c.key && sortDir === 'asc'" class="size-3.5" />
+                                        <ArrowDown v-else-if="sortKey === c.key" class="size-3.5" />
+                                        <ArrowUpDown v-else class="size-3.5 opacity-40" />
+                                    </button>
+                                </th>
                             </tr>
                         </thead>
                         <tbody class="divide-y">

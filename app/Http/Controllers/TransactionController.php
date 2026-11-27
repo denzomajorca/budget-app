@@ -30,20 +30,22 @@ class TransactionController extends Controller
             'import' => ['nullable', 'integer'],
             'transfers' => ['nullable', Rule::in(['unpaired'])],
             'review' => ['nullable', Rule::in(['1'])],
+            'sort' => ['nullable', Rule::in(['date', 'payee', 'category', 'account', 'amount'])],
+            'dir' => ['nullable', Rule::in(['asc', 'desc'])],
         ]);
 
         $query = $this->filtered($filters);
         $totals = (clone $query)->selectRaw('coalesce(sum(case when amount > 0 then amount else 0 end), 0) as money_in, coalesce(sum(case when amount < 0 then amount else 0 end), 0) as money_out, count(*) as n')->first();
 
         $page = $query->with(['account:id,name', 'category.parent', 'transfer.account:id,name'])
-            ->orderByDesc('date')->orderByDesc('id')
+            ->tap(fn ($q) => $this->sorted($q, $filters['sort'] ?? 'date', $filters['dir'] ?? 'desc'))
             ->paginate(50)->withQueryString()
             ->through(fn (Transaction $t) => $this->present($t, ($filters['transfers'] ?? null) === 'unpaired'));
 
         return Inertia::render('Transactions/Index', [
             'transactions' => $page,
             'totals' => ['in' => (int) $totals->money_in, 'out' => (int) $totals->money_out, 'count' => (int) $totals->n],
-            'filters' => array_merge(['account' => null, 'category' => null, 'from' => null, 'to' => null, 'q' => null, 'import' => null, 'transfers' => null, 'review' => null], $filters),
+            'filters' => array_merge(['account' => null, 'category' => null, 'from' => null, 'to' => null, 'q' => null, 'import' => null, 'transfers' => null, 'review' => null, 'sort' => null, 'dir' => null], $filters),
             'unpaired_transfers' => Transfers::unpairedCount(),
             'to_review' => Transaction::where('needs_review', true)->count(),
             'uncategorized' => Transaction::whereNull('category_id')->count(),
@@ -186,6 +188,24 @@ class TransactionController extends Controller
         $transaction->delete();
 
         return back()->with('status', 'Transaction deleted.');
+    }
+
+    /** Order by a column header: date, payee, category ("Main › Sub"), account or amount. Ties go newest first. */
+    private function sorted(Builder $q, string $sort, string $dir): void
+    {
+        $label = fn (string $part) => Category::from('categories as c')->leftJoin('categories as p', 'p.id', '=', 'c.parent_id')
+            ->selectRaw($part)->whereColumn('c.id', 'transactions.category_id')->limit(1);
+        match ($sort) {
+            'payee' => $q->orderBy('payee', $dir),
+            'amount' => $q->orderBy('amount', $dir),
+            'account' => $q->orderBy(Account::select('name')->whereColumn('accounts.id', 'transactions.account_id')->limit(1), $dir),
+            'category' => $q->orderBy($label('coalesce(p.name, c.name)'), $dir)->orderBy($label("case when p.id is null then '' else c.name end"), $dir),
+            default => $q->orderBy('date', $dir),
+        };
+        if ($sort !== 'date') {
+            $q->orderByDesc('date');
+        }
+        $q->orderBy('id', $dir === 'asc' && $sort === 'date' ? 'asc' : 'desc');
     }
 
     private function filtered(array $f): Builder
